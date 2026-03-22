@@ -26,10 +26,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "blo
 rusqlite = { version = "0.39", features = ["bundled"] }       # SQLite WAL 모드 (bundled = 크로스컴파일 용이)
 zstd = "0.13"                                                 # ZSTD 압축 (라즈베리 파이 32GB 수명 연장)
 
-# --- Step 4: Telegram ---
-# teloxide = { version = "0.13", features = ["macros"] }      # 텔레그램 봇 (Step 4에서 활성화)
-# reqwest = { version = "0.12", features = ["json", "rustls-tls"] }  # HTTP 클라이언트 (Step 4에서 활성화)
-# tokio = { version = "1", features = ["full"] }              # 비동기 런타임 (Step 4에서 활성화)
+# --- Step 4: Telegram & Agent Logic ---
+teloxide = { version = "0.13", features = ["macros"] }            # 텔레그램 봇 (Long-Polling)
+tokio = { version = "1", features = ["full"] }                    # 비동기 런타임 (teloxide 필수)
+chrono = "0.4"                                                    # 타임스탬프 (DB 기록, 로그)
 
 # --- Step 5: Skill System ---
 toml = "0.8"                                                  # TOML 스킬 파일 파싱

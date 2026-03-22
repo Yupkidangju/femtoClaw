@@ -9,9 +9,12 @@
 //    Headless 모드: 텔레그램 전용 (Step 4에서 구현)
 
 mod config;
+mod core;
+mod db;
 mod error;
 mod sandbox;
 mod security;
+mod skills;
 mod tui;
 
 use error::FemtoResult;
