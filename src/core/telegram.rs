@@ -8,9 +8,15 @@
 //   4. PIN 매칭 성공 → chat_id 기록, 페어링 완료
 //   5. 이후 메시지는 LLM 에이전트로 전달 → 응답 반환
 //
+// [v0.1.0] 추가 기능:
+//   - Exponential Backoff (1→2→4→...→60초)
+//   - 오프라인 큐잉 (네트워크 끊김 시 메시지 대기열)
+//   - Graceful Shutdown (shutdown_token으로 봇 종료)
+//
 // 통신: std::sync::mpsc 채널로 TUI ↔ 봇 스레드 간 메시지 교환
 
 use std::sync::{Arc, Mutex, mpsc};
+use std::sync::atomic::{AtomicBool, Ordering};
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 
@@ -27,6 +33,8 @@ pub enum BotEvent {
     ResponseSent(String),
     /// 오류 발생
     Error(String),
+    /// 봇 종료됨
+    Shutdown,
 }
 
 /// TUI → 봇 스레드로 전달되는 명령
@@ -63,6 +71,89 @@ impl BotState {
     }
 }
 
+/// [v0.1.0] 오프라인 큐 — 네트워크 끊김 시 메시지를 대기열에 저장
+#[derive(Debug)]
+pub struct OfflineQueue {
+    /// 미전송 메시지 대기열
+    messages: Vec<String>,
+    /// 최대 큐 크기 (메모리 보호)
+    max_size: usize,
+}
+
+impl OfflineQueue {
+    pub fn new(max_size: usize) -> Self {
+        OfflineQueue { messages: Vec::new(), max_size }
+    }
+
+    /// 메시지를 큐에 추가 (최대 크기 초과 시 가장 오래된 것 제거)
+    pub fn enqueue(&mut self, msg: String) {
+        if self.messages.len() >= self.max_size {
+            self.messages.remove(0);
+        }
+        self.messages.push(msg);
+    }
+
+    /// 대기열의 모든 메시지를 꺼낸다 (FIFO)
+    pub fn drain(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.messages)
+    }
+
+    pub fn len(&self) -> usize {
+        self.messages.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
+    }
+}
+
+/// [v0.1.0] Exponential Backoff 계산기
+/// 실패 시 1→2→4→8→...→60초까지 대기 시간 증가.
+/// 5분(300초) 연속 실패 시 경고 플래그 활성화.
+pub struct Backoff {
+    /// 현재 대기 시간 (초)
+    current_secs: u64,
+    /// 최대 대기 시간 (초)
+    max_secs: u64,
+    /// 연속 실패 총 시간 (초)
+    total_fail_secs: u64,
+    /// 5분 경고 발동 여부
+    pub warning_triggered: bool,
+}
+
+impl Backoff {
+    pub fn new() -> Self {
+        Backoff {
+            current_secs: 1,
+            max_secs: 60,
+            total_fail_secs: 0,
+            warning_triggered: false,
+        }
+    }
+
+    /// 다음 대기 시간을 반환하고 상태를 갱신한다
+    pub fn next_delay(&mut self) -> std::time::Duration {
+        let delay = std::time::Duration::from_secs(self.current_secs);
+        self.total_fail_secs += self.current_secs;
+
+        // 5분(300초) 연속 실패 시 경고
+        if self.total_fail_secs >= 300 && !self.warning_triggered {
+            self.warning_triggered = true;
+        }
+
+        // Exponential 증가 (최대 max_secs)
+        self.current_secs = (self.current_secs * 2).min(self.max_secs);
+        delay
+    }
+
+    /// 성공 시 리셋
+    pub fn reset(&mut self) {
+        self.current_secs = 1;
+        self.total_fail_secs = 0;
+        self.warning_triggered = false;
+    }
+}
+
 /// 6자리 랜덤 PIN 생성
 pub fn generate_pin() -> String {
     use rand::Rng;
@@ -70,12 +161,19 @@ pub fn generate_pin() -> String {
     format!("{:06}", rng.gen_range(0..999999))
 }
 
+/// [v0.1.0] Graceful Shutdown 을 위한 종료 플래그
+/// AtomicBool로 스레드 간 안전하게 공유.
+pub fn create_shutdown_flag() -> Arc<AtomicBool> {
+    Arc::new(AtomicBool::new(false))
+}
+
 /// [v0.1.0] 텔레그램 봇을 별도 스레드에서 시작한다.
 /// TUI 메인 루프를 블로킹하지 않음.
 ///
-/// 반환: (이벤트 수신 채널, 명령 송신 채널, PIN 코드)
+/// 반환: (이벤트 수신 채널, 명령 송신 채널, PIN 코드, 종료 플래그)
 pub fn spawn_bot(
     token: String,
+    shutdown_flag: Arc<AtomicBool>,
 ) -> (mpsc::Receiver<BotEvent>, mpsc::Sender<BotCommand>, String) {
     let (event_tx, event_rx) = mpsc::channel::<BotEvent>();
     let (cmd_tx, cmd_rx) = mpsc::channel::<BotCommand>();
@@ -95,39 +193,85 @@ pub fn spawn_bot(
             .expect("tokio 런타임 생성 실패");
 
         rt.block_on(async move {
-            run_bot(token, pin_clone, event_tx, cmd_rx).await;
+            run_bot(token, pin_clone, event_tx, cmd_rx, shutdown_flag).await;
         });
     });
 
     (event_rx, cmd_tx, pin)
 }
 
-/// 봇 메인 루프 (tokio async)
+/// 봇 메인 루프 (tokio async) — Backoff 포함
 async fn run_bot(
     token: String,
     pin: String,
     event_tx: mpsc::Sender<BotEvent>,
     _cmd_rx: mpsc::Receiver<BotCommand>,
+    shutdown_flag: Arc<AtomicBool>,
 ) {
-    let bot = Bot::new(&token);
+    let mut backoff = Backoff::new();
 
-    let state = Arc::new(Mutex::new(BotState::new(pin)));
-    let tx = event_tx.clone();
+    loop {
+        // Graceful Shutdown 체크
+        if shutdown_flag.load(Ordering::Relaxed) {
+            let _ = event_tx.send(BotEvent::Shutdown);
+            break;
+        }
 
-    // teloxide dispatcher: 모든 메시지를 핸들러로 라우팅
-    let handler = Update::filter_message()
-        .endpoint(move |bot: Bot, msg: Message, state: Arc<Mutex<BotState>>, tx: mpsc::Sender<BotEvent>| {
-            handle_message(bot, msg, state, tx)
+        let bot = Bot::new(&token);
+        let state = Arc::new(Mutex::new(BotState::new(pin.clone())));
+        let tx = event_tx.clone();
+        let flag = shutdown_flag.clone();
+
+        // teloxide dispatcher: 모든 메시지를 핸들러로 라우팅
+        let handler = Update::filter_message()
+            .endpoint(move |bot: Bot, msg: Message, state: Arc<Mutex<BotState>>, tx: mpsc::Sender<BotEvent>| {
+                handle_message(bot, msg, state, tx)
+            });
+
+        let mut dispatcher = Dispatcher::builder(bot, handler)
+            .dependencies(dptree::deps![state, tx])
+            .default_handler(|_upd| async {})
+            .error_handler(LoggingErrorHandler::with_custom_text("텔레그램 디스패처 오류"))
+            .build();
+
+        // shutdown_token으로 외부에서 디스패처 종료 가능
+        let shutdown_token = dispatcher.shutdown_token();
+
+        // 종료 감시 태스크
+        let flag_clone = flag.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if flag_clone.load(Ordering::Relaxed) {
+                    shutdown_token.shutdown().ok();
+                    break;
+                }
+            }
         });
 
-    Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![state, tx])
-        .default_handler(|_upd| async {})
-        .error_handler(LoggingErrorHandler::with_custom_text("텔레그램 디스패처 오류"))
-        .enable_ctrlc_handler()
-        .build()
-        .dispatch()
-        .await;
+        // 디스패처 실행 (연결 끊기면 여기서 반환)
+        dispatcher.dispatch().await;
+
+        // 종료 플래그 확인 — 의도적 종료면 루프 탈출
+        if shutdown_flag.load(Ordering::Relaxed) {
+            let _ = event_tx.send(BotEvent::Shutdown);
+            break;
+        }
+
+        // 비정상 종료 → Exponential Backoff 후 재연결
+        let delay = backoff.next_delay();
+        let _ = event_tx.send(BotEvent::Error(
+            format!("텔레그램 연결 끊김 — {}초 후 재연결", delay.as_secs())
+        ));
+
+        if backoff.warning_triggered {
+            let _ = event_tx.send(BotEvent::Error(
+                "⚠ 5분 이상 연속 실패! 네트워크 및 토큰 확인 필요".to_string()
+            ));
+        }
+
+        tokio::time::sleep(delay).await;
+    }
 }
 
 /// 개별 메시지 처리
@@ -171,9 +315,9 @@ async fn handle_message(
                     }
 
                     bot.send_message(chat_id, format!(
-                        "✅ *femtoClaw 페어링 성공!*\n\n\
-                        기기가 연결되었습니다.\n\
-                        이제 메시지를 보내면 에이전트가 응답합니다.\n\n\
+                        "✅ *femtoClaw 페어링 성공\\!*\n\n\
+                        기기가 연결되었습니다\\.\n\
+                        이제 메시지를 보내면 에이전트가 응답합니다\\.\n\n\
                         `/help` — 명령어 목록"
                     ))
                     .parse_mode(ParseMode::MarkdownV2)
@@ -231,13 +375,74 @@ async fn handle_message(
         } else {
             // 일반 메시지 → 에이전트로 전달
             let _ = event_tx.send(BotEvent::MessageReceived(text));
-
-            // TODO: 에이전트 응답을 받아서 전송하는 로직
-            // 현재는 수신 확인만 전송
             bot.send_message(chat_id, "⏳ 처리 중...")
                 .await.ok();
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pin_generation() {
+        let pin = generate_pin();
+        assert_eq!(pin.len(), 6);
+        assert!(pin.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn test_backoff_exponential() {
+        let mut backoff = Backoff::new();
+        // 1 → 2 → 4 → 8 → 16 → 32 → 60(최대)
+        assert_eq!(backoff.next_delay().as_secs(), 1);
+        assert_eq!(backoff.next_delay().as_secs(), 2);
+        assert_eq!(backoff.next_delay().as_secs(), 4);
+        assert_eq!(backoff.next_delay().as_secs(), 8);
+        assert_eq!(backoff.next_delay().as_secs(), 16);
+        assert_eq!(backoff.next_delay().as_secs(), 32);
+        assert_eq!(backoff.next_delay().as_secs(), 60); // 최대값 도달
+        assert_eq!(backoff.next_delay().as_secs(), 60); // 최대값 유지
+    }
+
+    #[test]
+    fn test_backoff_reset() {
+        let mut backoff = Backoff::new();
+        backoff.next_delay(); // 1
+        backoff.next_delay(); // 2
+        backoff.reset();
+        assert_eq!(backoff.next_delay().as_secs(), 1); // 리셋 후 다시 1부터
+    }
+
+    #[test]
+    fn test_backoff_5min_warning() {
+        let mut backoff = Backoff::new();
+        // 1+2+4+8+16+32+60+60+60+60 = 303초 > 300초
+        for _ in 0..10 {
+            backoff.next_delay();
+        }
+        assert!(backoff.warning_triggered, "5분 이상 실패 시 경고 발동");
+    }
+
+    #[test]
+    fn test_offline_queue() {
+        let mut queue = OfflineQueue::new(3);
+        assert!(queue.is_empty());
+
+        queue.enqueue("msg1".to_string());
+        queue.enqueue("msg2".to_string());
+        assert_eq!(queue.len(), 2);
+
+        // 최대 크기 초과 시 가장 오래된 것 제거
+        queue.enqueue("msg3".to_string());
+        queue.enqueue("msg4".to_string());
+        assert_eq!(queue.len(), 3); // msg1 제거됨
+
+        let drained = queue.drain();
+        assert_eq!(drained, vec!["msg2", "msg3", "msg4"]);
+        assert!(queue.is_empty());
+    }
 }

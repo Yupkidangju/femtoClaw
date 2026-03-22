@@ -33,3 +33,7 @@ chrono = "0.4"                                                    # 타임스탬
 
 # --- Step 5: Skill System ---
 toml = "0.8"                                                  # TOML 스킬 파일 파싱
+
+# --- Graceful Shutdown ---
+ctrlc = "3.4"                                                 # Ctrl+C/SIGTERM 핸들링
+
