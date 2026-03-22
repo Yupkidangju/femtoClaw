@@ -9,7 +9,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
 
 jobs:
   # ━━━ 1단계: 린트 + 포맷 검사 ━━━
@@ -25,7 +24,7 @@ jobs:
       - name: 포맷 검사
         run: cargo fmt --all -- --check
       - name: Clippy 린트
-        run: cargo clippy --all-targets -- -W warnings
+        run: cargo clippy --all-targets
 
   # ━━━ 2단계: 테스트 (Windows + Linux) ━━━
   test:

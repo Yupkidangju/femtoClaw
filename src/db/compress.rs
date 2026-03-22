@@ -14,8 +14,7 @@ pub fn compress_data(data: &[u8]) -> Vec<u8> {
 
 /// ZSTD 압축 데이터를 해제한다.
 pub fn decompress_data(compressed: &[u8]) -> Result<Vec<u8>, String> {
-    zstd::decode_all(compressed)
-        .map_err(|e| format!("ZSTD 해제 실패: {}", e))
+    zstd::decode_all(compressed).map_err(|e| format!("ZSTD 해제 실패: {}", e))
 }
 
 #[cfg(test)]
@@ -42,9 +41,12 @@ mod tests {
         let compressed = compress_data(&original);
 
         // 반복 데이터는 최소 5배 이상 압축되어야 함
-        assert!(compressed.len() < original.len() / 5,
+        assert!(
+            compressed.len() < original.len() / 5,
             "압축률 부족: 원본 {} → 압축 {} ({}배)",
-            original.len(), compressed.len(), original.len() / compressed.len()
+            original.len(),
+            compressed.len(),
+            original.len() / compressed.len()
         );
 
         let decompressed = decompress_data(&compressed).unwrap();

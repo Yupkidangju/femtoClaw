@@ -60,7 +60,7 @@ const BLACKLISTED_COMMANDS: &[&str] = &[
     "iptables -F",
     "netsh",
     // 위험한 쉘 명령
-    ":(){ :|:& };:",  // Fork bomb
+    ":(){ :|:& };:", // Fork bomb
     "dd if=",
     "> /dev/sda",
 ];
@@ -73,7 +73,8 @@ const BLACKLISTED_COMMANDS: &[&str] = &[
 pub fn validate_path(path: &Path, workspace: &Path) -> Result<PathBuf, JailViolation> {
     // workspace 절대 경로 확보
     let workspace_canonical = if workspace.exists() {
-        workspace.canonicalize()
+        workspace
+            .canonicalize()
             .map_err(|e| JailViolation::InvalidPath(format!("{}: {}", workspace.display(), e)))?
     } else {
         workspace.to_path_buf()
@@ -87,7 +88,8 @@ pub fn validate_path(path: &Path, workspace: &Path) -> Result<PathBuf, JailViola
     };
 
     let target_canonical = if target.exists() {
-        target.canonicalize()
+        target
+            .canonicalize()
             .map_err(|e| JailViolation::InvalidPath(format!("{}: {}", target.display(), e)))?
     } else {
         // 파일이 아직 없으면 (생성 전) 부모 기준 검증
@@ -132,8 +134,8 @@ pub fn cleanup_temp(workspace: &Path) -> Result<usize, String> {
     }
 
     let mut count = 0;
-    let entries = std::fs::read_dir(&temp_dir)
-        .map_err(|e| format!("temp 디렉토리 읽기 실패: {}", e))?;
+    let entries =
+        std::fs::read_dir(&temp_dir).map_err(|e| format!("temp 디렉토리 읽기 실패: {}", e))?;
 
     for entry in entries {
         let entry = entry.map_err(|e| format!("항목 읽기 실패: {}", e))?;
@@ -160,8 +162,13 @@ mod tests {
     fn setup_workspace() -> PathBuf {
         let dir = std::env::temp_dir()
             .join("femtoclaw_jail_test")
-            .join(format!("{}", std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+            .join(format!(
+                "{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
         fs::create_dir_all(dir.join("data")).unwrap();
         fs::create_dir_all(dir.join("temp")).unwrap();
         dir
@@ -187,7 +194,8 @@ mod tests {
         // ../ 순회 시도 차단
         let result = validate_path(Path::new("../../etc/passwd"), &ws);
         assert!(result.is_err());
-        if let Err(JailViolation::PathEscape(_)) = result {} else {
+        if let Err(JailViolation::PathEscape(_)) = result {
+        } else {
             panic!("PathEscape 에러여야 함");
         }
         cleanup(&ws);

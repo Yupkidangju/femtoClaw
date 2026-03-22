@@ -7,4 +7,4 @@
 
 pub mod loader;
 
-pub use loader::{Skill, SkillAction, load_skills_from_dir, save_skill};
+pub use loader::{load_skills_from_dir, save_skill, Skill, SkillAction};

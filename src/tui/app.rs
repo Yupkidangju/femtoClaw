@@ -29,14 +29,46 @@ struct Preset {
 
 /// 프리셋 목록 (좌우 방향키로 선택)
 const PRESETS: &[Preset] = &[
-    Preset { name: "OpenAI", endpoint: "https://api.openai.com/v1", preset_type: LlmPreset::OpenAi },
-    Preset { name: "Gemini", endpoint: "https://generativelanguage.googleapis.com/v1beta/openai", preset_type: LlmPreset::Gemini },
-    Preset { name: "Claude", endpoint: "https://api.anthropic.com/v1", preset_type: LlmPreset::Claude },
-    Preset { name: "xAI", endpoint: "https://api.x.ai/v1", preset_type: LlmPreset::XAi },
-    Preset { name: "OpenRouter", endpoint: "https://openrouter.ai/api/v1", preset_type: LlmPreset::OpenRouter },
-    Preset { name: "Ollama", endpoint: "http://localhost:11434", preset_type: LlmPreset::Ollama },
-    Preset { name: "LM Studio", endpoint: "http://localhost:1234/v1", preset_type: LlmPreset::LmStudio },
-    Preset { name: "Custom", endpoint: "", preset_type: LlmPreset::Custom },
+    Preset {
+        name: "OpenAI",
+        endpoint: "https://api.openai.com/v1",
+        preset_type: LlmPreset::OpenAi,
+    },
+    Preset {
+        name: "Gemini",
+        endpoint: "https://generativelanguage.googleapis.com/v1beta/openai",
+        preset_type: LlmPreset::Gemini,
+    },
+    Preset {
+        name: "Claude",
+        endpoint: "https://api.anthropic.com/v1",
+        preset_type: LlmPreset::Claude,
+    },
+    Preset {
+        name: "xAI",
+        endpoint: "https://api.x.ai/v1",
+        preset_type: LlmPreset::XAi,
+    },
+    Preset {
+        name: "OpenRouter",
+        endpoint: "https://openrouter.ai/api/v1",
+        preset_type: LlmPreset::OpenRouter,
+    },
+    Preset {
+        name: "Ollama",
+        endpoint: "http://localhost:11434",
+        preset_type: LlmPreset::Ollama,
+    },
+    Preset {
+        name: "LM Studio",
+        endpoint: "http://localhost:1234/v1",
+        preset_type: LlmPreset::LmStudio,
+    },
+    Preset {
+        name: "Custom",
+        endpoint: "",
+        preset_type: LlmPreset::Custom,
+    },
 ];
 
 // === 입력 필드 글자 수 상한 ===
@@ -159,9 +191,7 @@ impl App {
             async_tx: tx,
             async_rx: rx,
             app_config: AppConfig::default(),
-            feed_lines: vec![
-                format!("[{}] femtoClaw v0.1.0-beta 시작", timestamp()),
-            ],
+            feed_lines: vec![format!("[{}] femtoClaw v0.1.0-beta 시작", timestamp())],
         }
     }
 
@@ -205,24 +235,30 @@ impl App {
                         self.model = self.available_models[0].clone();
                         self.feed_lines.push(format!(
                             "[{}] LLM 검증 성공: {} — {}개 모델 발견",
-                            timestamp(), msg, self.available_models.len()
+                            timestamp(),
+                            msg,
+                            self.available_models.len()
                         ));
                     } else {
-                        self.feed_lines.push(format!("[{}] LLM 검증 성공: {}", timestamp(), msg));
+                        self.feed_lines
+                            .push(format!("[{}] LLM 검증 성공: {}", timestamp(), msg));
                     }
                 }
                 AsyncResult::LlmValidation(Err(e)) => {
                     self.llm_status = ValidationStatus::Failed(e.clone());
                     self.available_models.clear();
-                    self.feed_lines.push(format!("[{}] LLM 검증 실패: {}", timestamp(), e));
+                    self.feed_lines
+                        .push(format!("[{}] LLM 검증 실패: {}", timestamp(), e));
                 }
                 AsyncResult::TelegramValidation(Ok(msg)) => {
                     self.tg_status = ValidationStatus::Ok;
-                    self.feed_lines.push(format!("[{}] Telegram 검증 성공: {}", timestamp(), msg));
+                    self.feed_lines
+                        .push(format!("[{}] Telegram 검증 성공: {}", timestamp(), msg));
                 }
                 AsyncResult::TelegramValidation(Err(e)) => {
                     self.tg_status = ValidationStatus::Failed(e.clone());
-                    self.feed_lines.push(format!("[{}] Telegram 검증 실패: {}", timestamp(), e));
+                    self.feed_lines
+                        .push(format!("[{}] Telegram 검증 실패: {}", timestamp(), e));
                 }
             }
         }
@@ -329,24 +365,37 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
             KeyCode::Char('1') => {
-                self.feed_lines.push(format!("[{}] Agent Status — Step 3에서 구현 예정", timestamp()));
+                self.feed_lines.push(format!(
+                    "[{}] Agent Status — Step 3에서 구현 예정",
+                    timestamp()
+                ));
             }
             KeyCode::Char('2') => {
                 // 현재 설정된 LLM 정보 표시
                 if let Some(ref llm) = self.app_config.llm_provider {
                     self.feed_lines.push(format!(
                         "[{}] Model API: {:?} / {} / {}",
-                        timestamp(), llm.preset, llm.endpoint, llm.model
+                        timestamp(),
+                        llm.preset,
+                        llm.endpoint,
+                        llm.model
                     ));
                 } else {
-                    self.feed_lines.push(format!("[{}] LLM 미설정", timestamp()));
+                    self.feed_lines
+                        .push(format!("[{}] LLM 미설정", timestamp()));
                 }
             }
             KeyCode::Char('3') => {
-                self.feed_lines.push(format!("[{}] Skill List — Step 5에서 구현 예정", timestamp()));
+                self.feed_lines.push(format!(
+                    "[{}] Skill List — Step 5에서 구현 예정",
+                    timestamp()
+                ));
             }
             KeyCode::Char('4') => {
-                self.feed_lines.push(format!("[{}] Recent Actions — Step 3 DB 연동 후 구현", timestamp()));
+                self.feed_lines.push(format!(
+                    "[{}] Recent Actions — Step 3 DB 연동 후 구현",
+                    timestamp()
+                ));
             }
             _ => {}
         }
@@ -375,14 +424,16 @@ impl App {
                 self.password.as_bytes(),
                 &self.paths.config_enc,
             );
-            self.feed_lines.push(format!("[{}] 마스터 키 생성 완료", timestamp()));
+            self.feed_lines
+                .push(format!("[{}] 마스터 키 생성 완료", timestamp()));
             self.screen = Screen::Onboard;
         } else {
             // 재실행: 기존 config.enc 복호화 시도
             match config::load_config(self.password.as_bytes(), &self.paths.config_enc) {
                 Ok(cfg) => {
                     self.app_config = cfg;
-                    self.feed_lines.push(format!("[{}] 설정 복호화 성공", timestamp()));
+                    self.feed_lines
+                        .push(format!("[{}] 설정 복호화 성공", timestamp()));
                     self.screen = Screen::Dashboard;
                 }
                 Err(_) => {
@@ -390,10 +441,7 @@ impl App {
                     if self.pw_attempts >= 3 {
                         self.pw_error = Some("3회 실패. [R]을 눌러 설정을 리셋하세요".to_string());
                     } else {
-                        self.pw_error = Some(format!(
-                            "비밀번호 오류 ({}/3)",
-                            self.pw_attempts
-                        ));
+                        self.pw_error = Some(format!("비밀번호 오류 ({}/3)", self.pw_attempts));
                     }
                     self.password.clear();
                 }
@@ -413,22 +461,34 @@ impl App {
         // 글자 수 상한 초과 시 무시 (붙여넣기 방어)
         match self.onboard_field {
             OnboardField::ApiKey => {
-                if self.api_key.len() < MAX_API_KEY_LEN { self.api_key.push(c); }
+                if self.api_key.len() < MAX_API_KEY_LEN {
+                    self.api_key.push(c);
+                }
             }
             OnboardField::Model => {
-                if self.model.len() < MAX_MODEL_LEN { self.model.push(c); }
+                if self.model.len() < MAX_MODEL_LEN {
+                    self.model.push(c);
+                }
             }
             OnboardField::TelegramToken => {
-                if self.telegram_token.len() < MAX_TOKEN_LEN { self.telegram_token.push(c); }
+                if self.telegram_token.len() < MAX_TOKEN_LEN {
+                    self.telegram_token.push(c);
+                }
             }
         }
     }
 
     fn onboard_backspace(&mut self) {
         match self.onboard_field {
-            OnboardField::ApiKey => { self.api_key.pop(); }
-            OnboardField::Model => { self.model.pop(); }
-            OnboardField::TelegramToken => { self.telegram_token.pop(); }
+            OnboardField::ApiKey => {
+                self.api_key.pop();
+            }
+            OnboardField::Model => {
+                self.model.pop();
+            }
+            OnboardField::TelegramToken => {
+                self.telegram_token.pop();
+            }
         }
     }
 
@@ -495,7 +555,8 @@ impl App {
             &self.paths.config_enc,
         );
 
-        self.feed_lines.push(format!("[{}] 설정 저장 완료 → 대시보드", timestamp()));
+        self.feed_lines
+            .push(format!("[{}] 설정 저장 완료 → 대시보드", timestamp()));
         self.screen = Screen::Dashboard;
     }
 
@@ -519,11 +580,17 @@ impl App {
     fn render_boot(&self, frame: &mut Frame) {
         let area = frame.area();
         let lines = vec![
-            Line::from(Span::styled("BIOS DATE 03/23/26 00:00:00 VER 0.1", theme::title())),
+            Line::from(Span::styled(
+                "BIOS DATE 03/23/26 00:00:00 VER 0.1",
+                theme::title(),
+            )),
             Line::from(""),
             Line::from(Span::styled("femtoClaw (C) 2026", theme::title())),
             Line::from(""),
-            Line::from(Span::styled("SYSTEM: RUST COMPATIBLE @ ZERO-COST", theme::title())),
+            Line::from(Span::styled(
+                "SYSTEM: RUST COMPATIBLE @ ZERO-COST",
+                theme::title(),
+            )),
             Line::from(Span::styled(
                 format!("BASE MEMORY....{:>42}OK", ""),
                 theme::text(),
@@ -549,9 +616,10 @@ impl App {
         let area = frame.area();
         let chunks = Layout::vertical([
             Constraint::Length(3), // 타이틀 바
-            Constraint::Min(0),   // 컨텐츠
+            Constraint::Min(0),    // 컨텐츠
             Constraint::Length(1), // 푸터
-        ]).split(area);
+        ])
+        .split(area);
 
         // 타이틀 바
         let title_text = if self.is_first_run {
@@ -600,7 +668,10 @@ impl App {
         // 에러 메시지
         if let Some(ref err) = self.pw_error {
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(format!("  ✗ {}", err), theme::error())));
+            lines.push(Line::from(Span::styled(
+                format!("  ✗ {}", err),
+                theme::error(),
+            )));
         }
 
         let pw_block = Block::bordered()
@@ -623,10 +694,11 @@ impl App {
     fn render_onboard(&self, frame: &mut Frame) {
         let area = frame.area();
         let chunks = Layout::vertical([
-            Constraint::Length(3),  // 타이틀
+            Constraint::Length(3), // 타이틀
             Constraint::Min(0),    // 컨텐츠
             Constraint::Length(1), // 푸터
-        ]).split(area);
+        ])
+        .split(area);
 
         // 타이틀
         let title = Paragraph::new("femtoClaw v0.1 BETA — Onboarding: API & Token Setup")
@@ -639,16 +711,18 @@ impl App {
         let sections = Layout::vertical([
             Constraint::Length(10), // LLM 섹션
             Constraint::Length(7),  // Telegram 섹션
-            Constraint::Min(0),    // 여백
-        ]).split(content);
+            Constraint::Min(0),     // 여백
+        ])
+        .split(content);
 
         self.render_llm_section(frame, sections[0]);
         self.render_telegram_section(frame, sections[1]);
 
         // 푸터
         let footer = Paragraph::new(
-            "[←/→] Preset    [Tab] Field    [V] Verify    [Enter] Save & Continue    [Esc] Quit"
-        ).style(theme::muted());
+            "[←/→] Preset    [Tab] Field    [V] Verify    [Enter] Save & Continue    [Esc] Quit",
+        )
+        .style(theme::muted());
         frame.render_widget(footer, chunks[2]);
     }
 
@@ -656,27 +730,51 @@ impl App {
         let _preset = &PRESETS[self.preset_index];
 
         // 프리셋 이름 목록 (현재 선택 강조)
-        let preset_names: Vec<Span> = PRESETS.iter().enumerate().map(|(i, p)| {
-            if i == self.preset_index {
-                Span::styled(format!(" [{}] ", p.name), theme::selected())
-            } else {
-                Span::styled(format!("  {}  ", p.name), theme::muted())
-            }
-        }).collect();
+        let preset_names: Vec<Span> = PRESETS
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                if i == self.preset_index {
+                    Span::styled(format!(" [{}] ", p.name), theme::selected())
+                } else {
+                    Span::styled(format!("  {}  ", p.name), theme::muted())
+                }
+            })
+            .collect();
 
-        let api_indicator = if self.onboard_field == OnboardField::ApiKey { "▶ " } else { "  " };
-        let model_indicator = if self.onboard_field == OnboardField::Model { "▶ " } else { "  " };
+        let api_indicator = if self.onboard_field == OnboardField::ApiKey {
+            "▶ "
+        } else {
+            "  "
+        };
+        let model_indicator = if self.onboard_field == OnboardField::Model {
+            "▶ "
+        } else {
+            "  "
+        };
 
         let status_line = match &self.llm_status {
-            ValidationStatus::None => Line::from(Span::styled("  Status: [—] 검증 대기", theme::muted())),
-            ValidationStatus::Testing => Line::from(Span::styled("  Status: [⚙ TESTING...] 검증 중 (최대 5초)", theme::testing())),
-            ValidationStatus::Ok => Line::from(Span::styled("  Status: [✓ OK] 200 OK — Ready to save", theme::success())),
-            ValidationStatus::Failed(e) => Line::from(Span::styled(format!("  Status: [✗ FAIL] {} — [V]로 재시도", e), theme::error())),
+            ValidationStatus::None => {
+                Line::from(Span::styled("  Status: [—] 검증 대기", theme::muted()))
+            }
+            ValidationStatus::Testing => Line::from(Span::styled(
+                "  Status: [⚙ TESTING...] 검증 중 (최대 5초)",
+                theme::testing(),
+            )),
+            ValidationStatus::Ok => Line::from(Span::styled(
+                "  Status: [✓ OK] 200 OK — Ready to save",
+                theme::success(),
+            )),
+            ValidationStatus::Failed(e) => Line::from(Span::styled(
+                format!("  Status: [✗ FAIL] {} — [V]로 재시도", e),
+                theme::error(),
+            )),
         };
 
         // 모델 필드: 목록이 있으면 선택기, 없으면 수동 입력
         let model_display = if !self.available_models.is_empty() {
-            format!("{} ({}/{})",
+            format!(
+                "{} ({}/{})",
                 truncate_for_display(&self.model, 40),
                 self.model_index + 1,
                 self.available_models.len()
@@ -684,12 +782,22 @@ impl App {
         } else {
             truncate_for_display(&self.model, 50)
         };
-        let model_hint = if !self.available_models.is_empty() { " ↑↓" } else { "" };
+        let model_hint = if !self.available_models.is_empty() {
+            " ↑↓"
+        } else {
+            ""
+        };
 
         let lines = vec![
-            Line::from(Span::styled("  [ LLM Provider Configuration ]", theme::title())),
+            Line::from(Span::styled(
+                "  [ LLM Provider Configuration ]",
+                theme::title(),
+            )),
             Line::from(preset_names),
-            Line::from(Span::styled(format!("  Endpoint: {}", &self.endpoint), theme::text())),
+            Line::from(Span::styled(
+                format!("  Endpoint: {}", &self.endpoint),
+                theme::text(),
+            )),
             Line::from(vec![
                 Span::styled(format!("  {}API Key : [", api_indicator), theme::text()),
                 Span::styled(truncate_for_display(&self.api_key, 50), theme::input()),
@@ -711,20 +819,42 @@ impl App {
     }
 
     fn render_telegram_section(&self, frame: &mut Frame, area: Rect) {
-        let tg_indicator = if self.onboard_field == OnboardField::TelegramToken { "▶ " } else { "  " };
+        let tg_indicator = if self.onboard_field == OnboardField::TelegramToken {
+            "▶ "
+        } else {
+            "  "
+        };
 
         let status_line = match &self.tg_status {
-            ValidationStatus::None => Line::from(Span::styled("  Status: [—] 검증 대기 (선택사항)", theme::muted())),
-            ValidationStatus::Testing => Line::from(Span::styled("  Status: [⚙ TESTING...] 검증 중 (최대 5초)", theme::testing())),
-            ValidationStatus::Ok => Line::from(Span::styled("  Status: [✓ OK] Telegram Bot 확인됨", theme::success())),
-            ValidationStatus::Failed(e) => Line::from(Span::styled(format!("  Status: [✗ FAIL] {} — [V]로 재시도", e), theme::error())),
+            ValidationStatus::None => Line::from(Span::styled(
+                "  Status: [—] 검증 대기 (선택사항)",
+                theme::muted(),
+            )),
+            ValidationStatus::Testing => Line::from(Span::styled(
+                "  Status: [⚙ TESTING...] 검증 중 (최대 5초)",
+                theme::testing(),
+            )),
+            ValidationStatus::Ok => Line::from(Span::styled(
+                "  Status: [✓ OK] Telegram Bot 확인됨",
+                theme::success(),
+            )),
+            ValidationStatus::Failed(e) => Line::from(Span::styled(
+                format!("  Status: [✗ FAIL] {} — [V]로 재시도", e),
+                theme::error(),
+            )),
         };
 
         let lines = vec![
-            Line::from(Span::styled("  [ Telegram Bot Configuration ]", theme::title())),
+            Line::from(Span::styled(
+                "  [ Telegram Bot Configuration ]",
+                theme::title(),
+            )),
             Line::from(vec![
                 Span::styled(format!("  {}Bot Token: [", tg_indicator), theme::text()),
-                Span::styled(truncate_for_display(&self.telegram_token, 50), theme::input()),
+                Span::styled(
+                    truncate_for_display(&self.telegram_token, 50),
+                    theme::input(),
+                ),
                 Span::styled("]", theme::text()),
             ]),
             status_line,
@@ -744,12 +874,15 @@ impl App {
         // 전체: 상단 헤더 + 메인(좌/우 분할) + 하단 상태바
         let outer = Layout::vertical([
             Constraint::Length(1), // 헤더
-            Constraint::Min(0),   // 메인
+            Constraint::Min(0),    // 메인
             Constraint::Length(1), // 상태바
-        ]).split(area);
+        ])
+        .split(area);
 
         // 헤더
-        let provider_name = self.app_config.llm_provider
+        let provider_name = self
+            .app_config
+            .llm_provider
             .as_ref()
             .map(|p| format!("{:?}", p.preset))
             .unwrap_or_else(|| "—".into());
@@ -761,16 +894,19 @@ impl App {
         frame.render_widget(header, outer[0]);
 
         // 메인 — 좌(시스템)/우(터미널) 분할
-        let main = Layout::horizontal([
-            Constraint::Length(28),
-            Constraint::Min(0),
-        ]).split(outer[1]);
+        let main = Layout::horizontal([Constraint::Length(28), Constraint::Min(0)]).split(outer[1]);
 
         // 좌측: 시스템 정보 + 메뉴
         let sys_lines = vec![
             Line::from(Span::styled(" AGENT", theme::title())),
-            Line::from(Span::styled(format!("  Name: {}", self.app_config.agent_name), theme::text())),
-            Line::from(Span::styled(format!("  Model: {}", provider_name), theme::text())),
+            Line::from(Span::styled(
+                format!("  Name: {}", self.app_config.agent_name),
+                theme::text(),
+            )),
+            Line::from(Span::styled(
+                format!("  Model: {}", provider_name),
+                theme::text(),
+            )),
             Line::from(""),
             Line::from(Span::styled(" MENU", theme::title())),
             Line::from(Span::styled("  [1] Agent Status", theme::text())),
@@ -801,13 +937,15 @@ impl App {
         let feed_block = Block::bordered()
             .title(Span::styled("─ TERMINAL ─", theme::title()))
             .border_style(theme::border());
-        let feed_widget = Paragraph::new(feed).block(feed_block).wrap(Wrap { trim: false });
+        let feed_widget = Paragraph::new(feed)
+            .block(feed_block)
+            .wrap(Wrap { trim: false });
         frame.render_widget(feed_widget, main[1]);
 
         // 상태바
-        let status = Paragraph::new(
-            " [Q] Quit    [U] Undo Last    [↑/↓] Navigate    [Enter] Select"
-        ).style(theme::muted());
+        let status =
+            Paragraph::new(" [Q] Quit    [U] Undo Last    [↑/↓] Navigate    [Enter] Select")
+                .style(theme::muted());
         frame.render_widget(status, outer[2]);
     }
 }
@@ -817,7 +955,11 @@ impl App {
 /// [v0.1.0] LLM API 키를 검증한다.
 /// OpenAI 호환: GET /models 엔드포인트로 키 유효성 확인.
 /// Ollama: GET /api/tags (인증 불필요, 서버 가동 확인).
-fn validate_llm_api(endpoint: &str, api_key: &str, preset: &LlmPreset) -> Result<(String, Vec<String>), String> {
+fn validate_llm_api(
+    endpoint: &str,
+    api_key: &str,
+    preset: &LlmPreset,
+) -> Result<(String, Vec<String>), String> {
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(3))
         .timeout(std::time::Duration::from_secs(5))
@@ -828,12 +970,10 @@ fn validate_llm_api(endpoint: &str, api_key: &str, preset: &LlmPreset) -> Result
         LlmPreset::Ollama | LlmPreset::LmStudio => {
             client.get(format!("{}/api/tags", endpoint)).send()
         }
-        _ => {
-            client
-                .get(format!("{}/models", endpoint))
-                .header("Authorization", format!("Bearer {}", api_key))
-                .send()
-        }
+        _ => client
+            .get(format!("{}/models", endpoint))
+            .header("Authorization", format!("Bearer {}", api_key))
+            .send(),
     };
 
     match response {
@@ -905,10 +1045,11 @@ fn validate_telegram(token: &str) -> Result<String, String> {
 
     let url = format!("https://api.telegram.org/bot{}/getMe", token);
     match client.get(&url).send() {
-        Ok(resp) if resp.status().is_success() => {
-            Ok("봇 확인됨".to_string())
-        }
-        Ok(resp) => Err(format!("HTTP {} — 토큰이 올바른지 확인하세요", resp.status())),
+        Ok(resp) if resp.status().is_success() => Ok("봇 확인됨".to_string()),
+        Ok(resp) => Err(format!(
+            "HTTP {} — 토큰이 올바른지 확인하세요",
+            resp.status()
+        )),
         Err(e) => Err(format!("{}", e)),
     }
 }
@@ -931,12 +1072,7 @@ fn timestamp() -> String {
 fn center_rect(area: Rect, width: u16, height: u16) -> Rect {
     let x = area.x + area.width.saturating_sub(width) / 2;
     let y = area.y + area.height.saturating_sub(height) / 2;
-    Rect::new(
-        x,
-        y,
-        width.min(area.width),
-        height.min(area.height),
-    )
+    Rect::new(x, y, width.min(area.width), height.min(area.height))
 }
 
 /// [v0.1.0] 입력 텍스트가 표시 영역을 초과할 경우 끝부분만 보이도록 자른다.
@@ -950,4 +1086,3 @@ fn truncate_for_display(text: &str, max_width: usize) -> String {
         format!("…{}", &text[start..])
     }
 }
-

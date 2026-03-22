@@ -69,8 +69,8 @@ fn main_loop(
         if event::poll(Duration::from_millis(100))
             .map_err(|e| crate::error::FemtoError::SandboxCreation(e))?
         {
-            if let Event::Key(key_event) = event::read()
-                .map_err(|e| crate::error::FemtoError::SandboxCreation(e))?
+            if let Event::Key(key_event) =
+                event::read().map_err(|e| crate::error::FemtoError::SandboxCreation(e))?
             {
                 // [v0.1.0] Windows에서 Press/Release/Repeat 이벤트가 모두 발생함.
                 // Press만 처리해야 키 1회 입력 = 1회 동작이 보장된다.

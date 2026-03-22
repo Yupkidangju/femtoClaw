@@ -15,8 +15,8 @@
 //
 // 통신: std::sync::mpsc 채널로 TUI ↔ 봇 스레드 간 메시지 교환
 
-use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 
@@ -82,7 +82,10 @@ pub struct OfflineQueue {
 
 impl OfflineQueue {
     pub fn new(max_size: usize) -> Self {
-        OfflineQueue { messages: Vec::new(), max_size }
+        OfflineQueue {
+            messages: Vec::new(),
+            max_size,
+        }
     }
 
     /// 메시지를 큐에 추가 (최대 크기 초과 시 가장 오래된 것 제거)
@@ -223,15 +226,19 @@ async fn run_bot(
         let flag = shutdown_flag.clone();
 
         // teloxide dispatcher: 모든 메시지를 핸들러로 라우팅
-        let handler = Update::filter_message()
-            .endpoint(move |bot: Bot, msg: Message, state: Arc<Mutex<BotState>>, tx: mpsc::Sender<BotEvent>| {
-                handle_message(bot, msg, state, tx)
-            });
+        let handler = Update::filter_message().endpoint(
+            move |bot: Bot,
+                  msg: Message,
+                  state: Arc<Mutex<BotState>>,
+                  tx: mpsc::Sender<BotEvent>| { handle_message(bot, msg, state, tx) },
+        );
 
         let mut dispatcher = Dispatcher::builder(bot, handler)
             .dependencies(dptree::deps![state, tx])
             .default_handler(|_upd| async {})
-            .error_handler(LoggingErrorHandler::with_custom_text("텔레그램 디스패처 오류"))
+            .error_handler(LoggingErrorHandler::with_custom_text(
+                "텔레그램 디스패처 오류",
+            ))
             .build();
 
         // shutdown_token으로 외부에서 디스패처 종료 가능
@@ -260,13 +267,14 @@ async fn run_bot(
 
         // 비정상 종료 → Exponential Backoff 후 재연결
         let delay = backoff.next_delay();
-        let _ = event_tx.send(BotEvent::Error(
-            format!("텔레그램 연결 끊김 — {}초 후 재연결", delay.as_secs())
-        ));
+        let _ = event_tx.send(BotEvent::Error(format!(
+            "텔레그램 연결 끊김 — {}초 후 재연결",
+            delay.as_secs()
+        )));
 
         if backoff.warning_triggered {
             let _ = event_tx.send(BotEvent::Error(
-                "⚠ 5분 이상 연속 실패! 네트워크 및 토큰 확인 필요".to_string()
+                "⚠ 5분 이상 연속 실패! 네트워크 및 토큰 확인 필요".to_string(),
             ));
         }
 
@@ -303,7 +311,8 @@ async fn handle_message(
 
                 if pin_match {
                     // 페어링 성공
-                    let username = msg.from
+                    let username = msg
+                        .from
                         .as_ref()
                         .and_then(|u| u.username.clone())
                         .unwrap_or_else(|| "Unknown".to_string());
@@ -314,28 +323,38 @@ async fn handle_message(
                         s.paired_username = Some(username.clone());
                     }
 
-                    bot.send_message(chat_id, format!(
-                        "✅ *femtoClaw 페어링 성공\\!*\n\n\
+                    bot.send_message(
+                        chat_id,
+                        format!(
+                            "✅ *femtoClaw 페어링 성공\\!*\n\n\
                         기기가 연결되었습니다\\.\n\
                         이제 메시지를 보내면 에이전트가 응답합니다\\.\n\n\
                         `/help` — 명령어 목록"
-                    ))
+                        ),
+                    )
                     .parse_mode(ParseMode::MarkdownV2)
                     .await
                     .ok();
 
                     let _ = event_tx.send(BotEvent::Paired(chat_id.0, username));
                 } else {
-                    bot.send_message(chat_id, "❌ PIN이 일치하지 않습니다. TUI에 표시된 PIN을 확인하세요.")
-                        .await.ok();
+                    bot.send_message(
+                        chat_id,
+                        "❌ PIN이 일치하지 않습니다. TUI에 표시된 PIN을 확인하세요.",
+                    )
+                    .await
+                    .ok();
                 }
             } else {
-                bot.send_message(chat_id, "사용법: /pair 123456")
-                    .await.ok();
+                bot.send_message(chat_id, "사용법: /pair 123456").await.ok();
             }
         } else {
-            bot.send_message(chat_id, "🔒 먼저 페어링이 필요합니다.\n/pair [PIN코드]를 입력하세요.")
-                .await.ok();
+            bot.send_message(
+                chat_id,
+                "🔒 먼저 페어링이 필요합니다.\n/pair [PIN코드]를 입력하세요.",
+            )
+            .await
+            .ok();
         }
     } else {
         // 페어링 완료 상태: 메시지를 에이전트로 전달
@@ -347,7 +366,8 @@ async fn handle_message(
         // 자신의 chat_id만 허용
         if chat_id.0 != paired_id {
             bot.send_message(chat_id, "⚠️ 이 봇은 다른 기기와 페어링되어 있습니다.")
-                .await.ok();
+                .await
+                .ok();
             return Ok(());
         }
 
@@ -355,28 +375,32 @@ async fn handle_message(
             // 명령어 처리
             match text.as_str() {
                 "/help" => {
-                    bot.send_message(chat_id,
+                    bot.send_message(
+                        chat_id,
                         "📋 femtoClaw 명령어:\n\n\
                         /help — 이 도움말\n\
                         /status — 에이전트 상태\n\
                         /undo — 마지막 동작 취소\n\n\
-                        그 외 메시지는 에이전트에게 전달됩니다."
-                    ).await.ok();
+                        그 외 메시지는 에이전트에게 전달됩니다.",
+                    )
+                    .await
+                    .ok();
                 }
                 "/status" => {
                     bot.send_message(chat_id, "🟢 femtoClaw 에이전트 활성 중")
-                        .await.ok();
+                        .await
+                        .ok();
                 }
                 _ => {
                     bot.send_message(chat_id, "알 수 없는 명령어입니다. /help를 확인하세요.")
-                        .await.ok();
+                        .await
+                        .ok();
                 }
             }
         } else {
             // 일반 메시지 → 에이전트로 전달
             let _ = event_tx.send(BotEvent::MessageReceived(text));
-            bot.send_message(chat_id, "⏳ 처리 중...")
-                .await.ok();
+            bot.send_message(chat_id, "⏳ 처리 중...").await.ok();
         }
     }
 

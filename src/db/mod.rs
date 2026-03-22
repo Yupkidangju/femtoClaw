@@ -6,8 +6,8 @@
 //   ActionRecord   — 에이전트 행동 기록 (대화, 파일 조작, API 호출 등)
 //   UndoManager    — 최근 5건 표시 + 마지막 동작 Undo
 
-pub mod store;
 pub mod compress;
+pub mod store;
 
-pub use store::FemtoDb;
 pub use compress::{compress_data, decompress_data};
+pub use store::FemtoDb;

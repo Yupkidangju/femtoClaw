@@ -61,7 +61,9 @@ pub struct SkillDef {
     pub version: String,
 }
 
-fn default_version() -> String { "1.0".to_string() }
+fn default_version() -> String {
+    "1.0".to_string()
+}
 
 /// 허용 동작 목록
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -126,11 +128,10 @@ pub fn load_skills_from_dir(dir: &Path, is_builtin: bool) -> Result<Vec<Skill>, 
 
 /// 단일 TOML 스킬 파일 로드
 fn load_skill_file(path: &Path, is_builtin: bool) -> Result<Skill, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("파일 읽기 실패: {}", e))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("파일 읽기 실패: {}", e))?;
 
-    let toml_data: SkillToml = toml::from_str(&content)
-        .map_err(|e| format!("TOML 파싱 실패: {}", e))?;
+    let toml_data: SkillToml =
+        toml::from_str(&content).map_err(|e| format!("TOML 파싱 실패: {}", e))?;
 
     Ok(Skill {
         name: toml_data.skill.name,
@@ -147,8 +148,7 @@ fn load_skill_file(path: &Path, is_builtin: bool) -> Result<Skill, String> {
 /// [v0.1.0] 새 스킬을 TOML 파일로 저장한다.
 /// skills/user/ 디렉토리에 저장.
 pub fn save_skill(skill: &Skill, user_dir: &Path) -> Result<PathBuf, String> {
-    std::fs::create_dir_all(user_dir)
-        .map_err(|e| format!("스킬 디렉토리 생성 실패: {}", e))?;
+    std::fs::create_dir_all(user_dir).map_err(|e| format!("스킬 디렉토리 생성 실패: {}", e))?;
 
     let toml_data = SkillToml {
         skill: SkillDef {
@@ -165,18 +165,18 @@ pub fn save_skill(skill: &Skill, user_dir: &Path) -> Result<PathBuf, String> {
         },
     };
 
-    let content = toml::to_string_pretty(&toml_data)
-        .map_err(|e| format!("TOML 직렬화 실패: {}", e))?;
+    let content =
+        toml::to_string_pretty(&toml_data).map_err(|e| format!("TOML 직렬화 실패: {}", e))?;
 
     // 파일명: 스킬 이름을 snake_case로 변환
-    let filename = skill.name
+    let filename = skill
+        .name
         .to_lowercase()
         .replace(' ', "_")
         .replace(|c: char| !c.is_alphanumeric() && c != '_', "");
     let path = user_dir.join(format!("{}.toml", filename));
 
-    std::fs::write(&path, content)
-        .map_err(|e| format!("스킬 저장 실패: {}", e))?;
+    std::fs::write(&path, content).map_err(|e| format!("스킬 저장 실패: {}", e))?;
 
     Ok(path)
 }
@@ -189,8 +189,13 @@ mod tests {
     fn temp_skill_dir() -> PathBuf {
         let dir = std::env::temp_dir()
             .join("femtoclaw_skill_test")
-            .join(format!("{}", std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+            .join(format!(
+                "{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -263,7 +268,9 @@ allowed = ["file_read", "file_list"]
         let dir = temp_skill_dir();
 
         // 정상 파일
-        fs::write(dir.join("good.toml"), r#"
+        fs::write(
+            dir.join("good.toml"),
+            r#"
 [skill]
 name = "Good"
 description = "Works"
@@ -271,7 +278,9 @@ description = "Works"
 template = "test"
 [actions]
 allowed = ["chat_only"]
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         // 손상된 파일 (걸러져야 함)
         fs::write(dir.join("bad.toml"), "this is not valid toml {{{{").unwrap();

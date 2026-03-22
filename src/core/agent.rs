@@ -36,10 +36,7 @@ pub struct AgentResponse {
 
 /// [v0.1.0] LLM API에 대화를 전송하고 응답을 받는다.
 /// OpenAI 호환 /chat/completions 형식과 Ollama /api/chat 형식을 자동 분기.
-pub async fn chat(
-    config: &AgentConfig,
-    messages: &[ChatMessage],
-) -> Result<AgentResponse, String> {
+pub async fn chat(config: &AgentConfig, messages: &[ChatMessage]) -> Result<AgentResponse, String> {
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(5))
         .timeout(std::time::Duration::from_secs(120)) // LLM은 응답이 느릴 수 있음
@@ -47,12 +44,8 @@ pub async fn chat(
         .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))?;
 
     match config.preset {
-        LlmPreset::Ollama | LlmPreset::LmStudio => {
-            chat_ollama(&client, config, messages).await
-        }
-        _ => {
-            chat_openai_compatible(&client, config, messages).await
-        }
+        LlmPreset::Ollama | LlmPreset::LmStudio => chat_ollama(&client, config, messages).await,
+        _ => chat_openai_compatible(&client, config, messages).await,
     }
 }
 
@@ -70,7 +63,8 @@ async fn chat_openai_compatible(
         "max_tokens": 4096,
     });
 
-    let response = client.post(&url)
+    let response = client
+        .post(&url)
         .header("Authorization", format!("Bearer {}", config.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
@@ -90,7 +84,9 @@ async fn chat_openai_compatible(
         return Err(format!("LLM API 오류: HTTP {}", response.status()));
     }
 
-    let json: serde_json::Value = response.json().await
+    let json: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| format!("응답 파싱 실패: {}", e))?;
 
     // OpenAI 응답 형식: choices[0].message.content
@@ -99,16 +95,15 @@ async fn chat_openai_compatible(
         .unwrap_or("[응답 없음]")
         .to_string();
 
-    let model = json["model"]
-        .as_str()
-        .unwrap_or(&config.model)
-        .to_string();
+    let model = json["model"].as_str().unwrap_or(&config.model).to_string();
 
-    let tokens = json["usage"]["total_tokens"]
-        .as_u64()
-        .map(|t| t as u32);
+    let tokens = json["usage"]["total_tokens"].as_u64().map(|t| t as u32);
 
-    Ok(AgentResponse { content, model, tokens_used: tokens })
+    Ok(AgentResponse {
+        content,
+        model,
+        tokens_used: tokens,
+    })
 }
 
 /// Ollama API (/api/chat) 호출
@@ -125,7 +120,8 @@ async fn chat_ollama(
         "stream": false,
     });
 
-    let response = client.post(&url)
+    let response = client
+        .post(&url)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
@@ -144,7 +140,9 @@ async fn chat_ollama(
         return Err(format!("Ollama API 오류: HTTP {}", response.status()));
     }
 
-    let json: serde_json::Value = response.json().await
+    let json: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| format!("응답 파싱 실패: {}", e))?;
 
     // Ollama 응답 형식: message.content
@@ -153,15 +151,14 @@ async fn chat_ollama(
         .unwrap_or("[응답 없음]")
         .to_string();
 
-    let model = json["model"]
-        .as_str()
-        .unwrap_or(&config.model)
-        .to_string();
+    let model = json["model"].as_str().unwrap_or(&config.model).to_string();
 
     // Ollama는 토큰 사용량을 eval_count로 제공
-    let tokens = json["eval_count"]
-        .as_u64()
-        .map(|t| t as u32);
+    let tokens = json["eval_count"].as_u64().map(|t| t as u32);
 
-    Ok(AgentResponse { content, model, tokens_used: tokens })
+    Ok(AgentResponse {
+        content,
+        model,
+        tokens_used: tokens,
+    })
 }

@@ -19,9 +19,9 @@ mod security;
 mod skills;
 mod tui;
 
+use error::FemtoResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use error::FemtoResult;
 
 /// [v0.1.0] 앱 실행 모드
 #[derive(Debug, Clone, PartialEq)]
@@ -50,7 +50,8 @@ fn setup_shutdown_handler() -> Arc<AtomicBool> {
     ctrlc::set_handler(move || {
         eprintln!("\n[femtoClaw] 종료 신호 수신 — Graceful Shutdown 진행 중...");
         flag.store(true, Ordering::SeqCst);
-    }).unwrap_or_else(|e| {
+    })
+    .unwrap_or_else(|e| {
         eprintln!("[경고] Ctrl+C 핸들러 등록 실패: {}", e);
     });
 
@@ -87,10 +88,7 @@ fn run() -> FemtoResult<()> {
 
 /// [v0.1.0] 헤드리스 모드: TUI 없이 텔레그램 봇만 실행.
 /// config.enc에서 설정 로드 → 텔레그램 봇 시작 → 종료 신호까지 대기.
-fn run_headless(
-    paths: &sandbox::SandboxPaths,
-    shutdown_flag: Arc<AtomicBool>,
-) -> FemtoResult<()> {
+fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -> FemtoResult<()> {
     eprintln!("┌──────────────────────────────────────────┐");
     eprintln!("│  femtoClaw v0.1.0-beta — Headless Mode   │");
     eprintln!("└──────────────────────────────────────────┘");
@@ -105,10 +103,12 @@ fn run_headless(
     // 비밀번호 입력 (터미널에서)
     eprintln!("[*] 마스터 비밀번호를 입력하세요:");
     let mut password = String::new();
-    std::io::stdin().read_line(&mut password)
-        .map_err(|e| crate::error::FemtoError::ConfigIo(
-            std::io::Error::new(std::io::ErrorKind::Other, format!("입력 실패: {}", e))
-        ))?;
+    std::io::stdin().read_line(&mut password).map_err(|e| {
+        crate::error::FemtoError::ConfigIo(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("입력 실패: {}", e),
+        ))
+    })?;
     let password = password.trim();
 
     // config.enc 로드
