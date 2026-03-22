@@ -83,6 +83,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: 릴리즈 빌드
+        env:
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
         run: cargo build --release --target ${{ matrix.target.triple }}
 
       - name: 바이너리 복사
