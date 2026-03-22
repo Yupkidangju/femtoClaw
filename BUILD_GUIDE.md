@@ -130,3 +130,50 @@ sudo dnf install openssl-devel
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
 ```
+
+## 8. 빌드 스크립트
+
+프로젝트에는 명령형/대화형 빌드 스크립트가 포함되어 있습니다.
+
+### 8.1. 명령형 (비대화식 — CI/CD 용도)
+
+| OS | 스크립트 | 예시 |
+|----|----------|------|
+| Windows | `build.bat` | `build.bat --test` |
+| Linux/macOS | `build.sh` | `./build.sh --target rpi64` |
+
+**옵션:**
+- `--debug` — 디버그 빌드
+- `--test` — 테스트만 실행
+- `--clean` — 빌드 캐시 정리
+- `--target <linux|rpi|rpi64|all>` — 크로스 빌드 (Linux/macOS only)
+
+### 8.2. 대화형 (인터랙티브 — 개발자용)
+
+| OS | 스크립트 |
+|----|----------|
+| Windows | `build_interactive.bat` |
+| Linux/macOS | `build_interactive.sh` |
+
+메뉴 선택 방식으로 빌드 타겟, 테스트, 린트 검사 등을 실행합니다.
+
+## 9. CI/CD (GitHub Actions)
+
+`.github/workflows/ci.yml` 파이프라인이 자동 실행됩니다.
+
+### 파이프라인 단계
+
+| 단계 | 내용 | 트리거 |
+|------|------|--------|
+| **Lint** | `cargo fmt --check` + `cargo clippy` | push, PR |
+| **Test** | Windows + Linux 테스트 | push, PR |
+| **Build** | Windows x64, Linux x64, RPi ARM64 릴리즈 빌드 | push, PR |
+| **Release** | GitHub Release + 바이너리 첨부 | 태그 `v*` 푸시 |
+
+### 릴리즈 생성 방법
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+태그 푸시 시 CI가 자동으로 3개 타겟 바이너리를 빌드하고 GitHub Release에 첨부합니다.
+

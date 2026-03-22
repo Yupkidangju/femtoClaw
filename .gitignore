@@ -1,5 +1,6 @@
 # === Rust 빌드 산출물 ===
 /target/
+/dist/
 **/*.rs.bk
 *.pdb
 
