@@ -1,0 +1,35 @@
+[package]
+name = "femtoclaw"
+version = "0.1.0-beta"
+edition = "2021"
+description = "펨토초 수준의 TUI 기반 에이전트 자동화 플랫폼"
+license = "TBD"
+
+# [v0.1.0] 전체 v0.1 의존성 선언. Step별로 순차 활성화.
+
+[dependencies]
+# --- Step 1: Core Sandbox Initialization ---
+dirs = "6"                                                    # 크로스 플랫폼 홈 디렉토리 탐색
+chacha20poly1305 = "0.10"                                     # AEAD 양방향 암복호화
+argon2 = "0.5"                                                # 마스터 패스워드 → 암호화 키 파생 (Argon2id)
+rand = "0.8"                                                  # 솔트, 논스, PIN 등 난수 생성
+serde = { version = "1", features = ["derive"] }              # 설정 직렬화/역직렬화
+serde_json = "1"                                              # JSON 형식 설정 파일
+thiserror = "2"                                               # 에러 타입 정의
+
+# --- Step 2: TUI Onboarding ---
+ratatui = "0.30"                                              # TUI 프레임워크 (Amber Monochrome)
+crossterm = "0.28"                                            # 터미널 백엔드 (Windows/Linux/ARM)
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }  # API 키 검증용 HTTP 클라이언트
+
+# --- Step 3: Database & Compression ---
+rusqlite = { version = "0.39", features = ["bundled"] }       # SQLite WAL 모드 (bundled = 크로스컴파일 용이)
+zstd = "0.13"                                                 # ZSTD 압축 (라즈베리 파이 32GB 수명 연장)
+
+# --- Step 4: Telegram ---
+# teloxide = { version = "0.13", features = ["macros"] }      # 텔레그램 봇 (Step 4에서 활성화)
+# reqwest = { version = "0.12", features = ["json", "rustls-tls"] }  # HTTP 클라이언트 (Step 4에서 활성화)
+# tokio = { version = "1", features = ["full"] }              # 비동기 런타임 (Step 4에서 활성화)
+
+# --- Step 5: Skill System ---
+toml = "0.8"                                                  # TOML 스킬 파일 파싱

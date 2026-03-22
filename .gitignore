@@ -1,0 +1,35 @@
+# === Rust 빌드 산출물 ===
+/target/
+**/*.rs.bk
+*.pdb
+
+# === D3D Protocol: Git에 포함하지 않는 로컬 전용 문서 ===
+# Git Allowlist: README.md, CHANGELOG.md, BUILD_GUIDE.md (+ 소스 코드)만 커밋
+# 아래 문서들은 로컬에서만 관리 (spec.md 포함)
+spec.md
+designs.md
+IMPLEMENTATION_SUMMARY.md
+LESSONS_LEARNED.md
+DESIGN_DECISIONS.md
+audit_roadmap.md
+
+# === 디자인 자료 (로컬 전용) ===
+/design/
+
+# === Antigravity/AI 작업 디렉토리 ===
+.antigravity/
+.antigravityrules
+
+# === OS/IDE 생성 파일 ===
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# === 환경변수/비밀 파일 ===
+.env
+*.enc
