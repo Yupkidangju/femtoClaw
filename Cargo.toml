@@ -1,6 +1,6 @@
 [package]
 name = "femtoclaw"
-version = "0.1.0-beta"
+version = "0.2.0"
 edition = "2021"
 description = "펨토초 수준의 TUI 기반 에이전트 자동화 플랫폼"
 license = "TBD"
@@ -36,4 +36,7 @@ toml = "0.8"                                                  # TOML 스킬 파�
 
 # --- Graceful Shutdown ---
 ctrlc = "3.4"                                                 # Ctrl+C/SIGTERM 핸들링
+
+# --- Step 6: Rhai Dynamic Skills (v0.2) ---
+rhai = "1.24"                                                 # 동적 스크립팅 엔진 (Sandboxed)
 

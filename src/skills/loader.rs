@@ -1,6 +1,6 @@
-// femtoClaw — TOML 스킬 파일 로더
-// [v0.1.0] Step 5: skills/core/ 및 skills/user/ 디렉토리에서
-// .toml 스킬 파일을 스캔하여 일괄 로드한다.
+// femtoClaw — 스킬 파일 로더 (TOML + Rhai)
+// [v0.2.0] Step 5/6b: skills/core/ 및 skills/user/ 디렉토리에서
+// .toml 정적 스킬과 .rhai 동적 스킬 파일을 일괄 로드한다.
 //
 // 스킬 파일 형식 (TOML):
 // ```toml
@@ -79,6 +79,15 @@ struct SkillToml {
     actions: ActionsDef,
 }
 
+/// [v0.2.0] 스킬 유형
+#[derive(Debug, Clone, PartialEq)]
+pub enum SkillType {
+    /// TOML 정적 스킬 (프롬프트 템플릿 기반)
+    Static,
+    /// Rhai 동적 스킬 (스크립트 실행)
+    Dynamic,
+}
+
 /// 로드된 스킬 (파일 경로 포함)
 #[derive(Debug, Clone)]
 pub struct Skill {
@@ -92,9 +101,11 @@ pub struct Skill {
     pub source_path: PathBuf,
     /// 내장 스킬 여부
     pub is_builtin: bool,
+    /// [v0.2.0] 스킬 유형 (Static = TOML, Dynamic = Rhai)
+    pub skill_type: SkillType,
 }
 
-/// [v0.1.0] 지정 디렉토리에서 .toml 스킬 파일을 모두 로드한다.
+/// [v0.2.0] 지정 디렉토리에서 .toml 및 .rhai 스킬 파일을 모두 로드한다.
 pub fn load_skills_from_dir(dir: &Path, is_builtin: bool) -> Result<Vec<Skill>, String> {
     if !dir.exists() {
         return Ok(Vec::new());
@@ -108,18 +119,24 @@ pub fn load_skills_from_dir(dir: &Path, is_builtin: bool) -> Result<Vec<Skill>, 
     for entry in entries {
         let entry = entry.map_err(|e| format!("항목 읽기 실패: {}", e))?;
         let path = entry.path();
+        let ext = path.extension().and_then(|e| e.to_str());
 
-        // .toml 파일만 처리
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-
-        match load_skill_file(&path, is_builtin) {
-            Ok(skill) => skills.push(skill),
-            Err(e) => {
-                // 파싱 실패한 파일은 건너뛰고 경고
-                eprintln!("[경고] 스킬 로드 실패 {}: {}", path.display(), e);
+        match ext {
+            Some("toml") => {
+                // TOML 정적 스킬 로드
+                match load_skill_file(&path, is_builtin) {
+                    Ok(skill) => skills.push(skill),
+                    Err(e) => eprintln!("[경고] TOML 스킬 로드 실패 {}: {}", path.display(), e),
+                }
             }
+            Some("rhai") => {
+                // [v0.2.0] Rhai 동적 스킬 로드
+                match load_rhai_skill(&path, is_builtin) {
+                    Ok(skill) => skills.push(skill),
+                    Err(e) => eprintln!("[경고] Rhai 스킬 로드 실패 {}: {}", path.display(), e),
+                }
+            }
+            _ => continue,
         }
     }
 
@@ -142,6 +159,46 @@ fn load_skill_file(path: &Path, is_builtin: bool) -> Result<Skill, String> {
         allowed_actions: toml_data.actions.allowed,
         source_path: path.to_path_buf(),
         is_builtin,
+        skill_type: SkillType::Static,
+    })
+}
+
+/// [v0.2.0] Rhai 스킬 파일 로드 — 파일 첫 줄 주석에서 메타데이터 추출
+/// 형식: // @name: 스킬이름 | @desc: 설명
+fn load_rhai_skill(path: &Path, is_builtin: bool) -> Result<Skill, String> {
+    let content = std::fs::read_to_string(path).map_err(|e| format!("파일 읽기 실패: {}", e))?;
+
+    // 첫 번째 주석 줄에서 메타데이터 추출
+    let mut name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let mut description = "Rhai 동적 스킬".to_string();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("//") {
+            break;
+        }
+        let comment = trimmed.trim_start_matches("//").trim();
+        if let Some(n) = comment.strip_prefix("@name:") {
+            name = n.trim().to_string();
+        } else if let Some(d) = comment.strip_prefix("@desc:") {
+            description = d.trim().to_string();
+        }
+    }
+
+    Ok(Skill {
+        name,
+        description,
+        version: "1.0".to_string(),
+        prompt_template: String::new(), // Rhai는 스크립트 자체가 동작
+        system_prompt: None,
+        allowed_actions: vec![], // Rhai는 호스트 함수로 동작 제한
+        source_path: path.to_path_buf(),
+        is_builtin,
+        skill_type: SkillType::Dynamic,
     })
 }
 
@@ -247,6 +304,7 @@ allowed = ["file_read", "file_list"]
             allowed_actions: vec![SkillAction::WebSearch, SkillAction::ChatOnly],
             source_path: PathBuf::new(),
             is_builtin: false,
+            skill_type: SkillType::Static,
         };
 
         // 저장
