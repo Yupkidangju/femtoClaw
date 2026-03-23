@@ -14,6 +14,7 @@ mod config;
 mod core;
 mod db;
 mod error;
+mod i18n;
 mod sandbox;
 mod security;
 mod skills;
@@ -31,9 +32,21 @@ enum RunMode {
     Headless,
 }
 
-/// [v0.1.0] CLI 인자 파싱
+/// [v0.5.0] CLI 인자 파싱 (--headless, --lang)
 fn parse_args() -> RunMode {
     let args: Vec<String> = std::env::args().collect();
+
+    // --lang <code> 오버라이드 (OS 감지보다 우선)
+    for i in 0..args.len() {
+        if args[i] == "--lang" {
+            if let Some(code) = args.get(i + 1) {
+                if let Some(lang) = i18n::Lang::from_code(code) {
+                    i18n::set_lang(lang);
+                }
+            }
+        }
+    }
+
     if args.iter().any(|a| a == "--headless") {
         RunMode::Headless
     } else {
@@ -59,8 +72,12 @@ fn setup_shutdown_handler() -> Arc<AtomicBool> {
     shutdown
 }
 
-/// [v0.1.0] 메인 초기화 → TUI/Headless 분기
+/// [v0.5.0] 메인 초기화 → i18n 감지 → TUI/Headless 분기
 fn run() -> FemtoResult<()> {
+    // OS 시스템 언어 자동 감지 (미지원 언어 → 영어 fallback)
+    i18n::detect_and_set_lang();
+
+    // --lang 인자가 있으면 detect 결과를 덮어쓴
     let mode = parse_args();
 
     // 1. 샌드박스 초기화
