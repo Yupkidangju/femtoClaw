@@ -4,6 +4,27 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며,
 버전 관리는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [0.3.0] - 2026-03-23
+
+### 추가됨 (Added)
+- **[Step 8a] AgentConfig** — 에이전트별 LLM 설정 모델 (최대 3개)
+- **[Step 8a] AppConfig 확장** — agents Vec, active_agent_id, add_agent(), switch_agent()
+- **[Step 8b] AgentPaths** — 에이전트별 격리 DB + workspace 디렉토리 자동 생성
+- **[Step 8b] AgentManager** — 멀티 에이전트 경로 관리
+- **[Step 8c] 텔레그램 라우팅** — /agent N (전환), /agents (목록), 세션별 활성 에이전트
+- **[Step 8d] TUI [5] Agent Switch** — 순환 전환
+- **[Step 8d] TUI [A] Add Agent** — 대시보드에서 에이전트 추가
+
+### 변경됨 (Changed)
+- Cargo.toml 버전: 0.2.0 → **0.3.0**
+- spec.md §12 멀티 에이전트 상세 사양 추가
+- BotState에 active_agent_id + agent_ids 추가
+- SandboxPaths 확장 (v0.2 기존 유지)
+
+### 참고사항
+- **v0.3.0 전체 완료** — Step 8a~8d, 53개 테스트 통과
+- 하위 호환: v0.1/v0.2 설정 파일은 자동으로 에이전트 #1에 매핑
+
 ## [0.2.0] - 2026-03-23
 
 ### 추가됨 (Added)
