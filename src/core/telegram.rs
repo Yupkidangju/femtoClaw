@@ -1,5 +1,5 @@
 // femtoClaw — 텔레그램 봇 엔진
-// [v0.1.0] Step 4: teloxide Long-Polling 단일 에이전트 봇.
+// [v0.3.0] Step 4/8c: teloxide Long-Polling + 멀티 에이전트 라우팅.
 //
 // 동작 흐름:
 //   1. TUI/Headless에서 봇 스레드 시작 (별도 tokio 런타임)
@@ -31,6 +31,8 @@ pub enum BotEvent {
     MessageReceived(String),
     /// 에이전트 응답 전송 완료
     ResponseSent(String),
+    /// [v0.3.0] 에이전트 전환됨 (agent_id)
+    AgentSwitched(u8),
     /// 오류 발생
     Error(String),
     /// 봇 종료됨
@@ -55,6 +57,10 @@ pub struct BotState {
     pub paired_chat_id: Option<i64>,
     /// 페어링된 사용자명
     pub paired_username: Option<String>,
+    /// [v0.3.0] 현재 활성 에이전트 ID
+    pub active_agent_id: u8,
+    /// [v0.3.0] 등록된 에이전트 ID 목록
+    pub agent_ids: Vec<u8>,
 }
 
 impl BotState {
@@ -63,6 +69,16 @@ impl BotState {
             pin,
             paired_chat_id: None,
             paired_username: None,
+            active_agent_id: 1,
+            agent_ids: vec![1],
+        }
+    }
+
+    /// [v0.3.0] 에이전트 목록을 설정
+    pub fn set_agents(&mut self, ids: Vec<u8>) {
+        self.agent_ids = ids;
+        if !self.agent_ids.contains(&self.active_agent_id) {
+            self.active_agent_id = *self.agent_ids.first().unwrap_or(&1);
         }
     }
 
@@ -380,21 +396,86 @@ async fn handle_message(
                         "📋 femtoClaw 명령어:\n\n\
                         /help — 이 도움말\n\
                         /status — 에이전트 상태\n\
-                        /undo — 마지막 동작 취소\n\n\
+                        /undo — 마지막 동작 취소\n\
+                        /agents — 에이전트 목록\n\
+                        /agent N — 에이전트 전환\n\n\
                         그 외 메시지는 에이전트에게 전달됩니다.",
                     )
                     .await
                     .ok();
                 }
                 "/status" => {
-                    bot.send_message(chat_id, "🟢 femtoClaw 에이전트 활성 중")
+                    let agent_id = {
+                        let s = state.lock().unwrap();
+                        s.active_agent_id
+                    };
+                    bot.send_message(
+                        chat_id,
+                        format!("🟢 femtoClaw 에이전트 #{} 활성 중", agent_id),
+                    )
+                    .await
+                    .ok();
+                }
+                // [v0.3.0] /agents — 에이전트 목록
+                "/agents" => {
+                    let (agents, active) = {
+                        let s = state.lock().unwrap();
+                        (s.agent_ids.clone(), s.active_agent_id)
+                    };
+                    let list: Vec<String> = agents
+                        .iter()
+                        .map(|id| {
+                            if *id == active {
+                                format!("▶ Agent #{} (활성)", id)
+                            } else {
+                                format!("  Agent #{}", id)
+                            }
+                        })
+                        .collect();
+                    bot.send_message(chat_id, format!("👥 에이전트 목록:\n{}", list.join("\n")))
                         .await
                         .ok();
                 }
                 _ => {
-                    bot.send_message(chat_id, "알 수 없는 명령어입니다. /help를 확인하세요.")
-                        .await
-                        .ok();
+                    // [v0.3.0] /agent N 명령어 처리
+                    if text.starts_with("/agent ") {
+                        let parts: Vec<&str> = text.split_whitespace().collect();
+                        if parts.len() == 2 {
+                            if let Ok(agent_id) = parts[1].parse::<u8>() {
+                                let success = {
+                                    let mut s = state.lock().unwrap();
+                                    if s.agent_ids.contains(&agent_id) {
+                                        s.active_agent_id = agent_id;
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                };
+                                if success {
+                                    bot.send_message(
+                                        chat_id,
+                                        format!("✅ 에이전트 #{}로 전환되었습니다", agent_id),
+                                    )
+                                    .await
+                                    .ok();
+                                    let _ = event_tx.send(BotEvent::AgentSwitched(agent_id));
+                                } else {
+                                    bot.send_message(
+                                        chat_id,
+                                        format!("❌ 에이전트 #{}을(를) 찾을 수 없습니다. /agents로 확인하세요.", agent_id),
+                                    )
+                                    .await
+                                    .ok();
+                                }
+                            } else {
+                                bot.send_message(chat_id, "사용법: /agent 1").await.ok();
+                            }
+                        }
+                    } else {
+                        bot.send_message(chat_id, "알 수 없는 명령어입니다. /help를 확인하세요.")
+                            .await
+                            .ok();
+                    }
                 }
             }
         } else {

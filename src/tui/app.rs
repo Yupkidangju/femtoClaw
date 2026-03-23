@@ -475,6 +475,73 @@ impl App {
                     }
                 }
             }
+            KeyCode::Char('5') => {
+                // [v0.3.0] 에이전트 전환
+                self.feed_lines
+                    .push(format!("[{}] ━━ Agent Switch ━━", timestamp()));
+                if self.app_config.agents.is_empty() {
+                    self.feed_lines.push("  (등록된 에이전트 없음)".to_string());
+                } else {
+                    for a in &self.app_config.agents {
+                        let marker = if a.id == self.app_config.active_agent_id {
+                            "▶"
+                        } else {
+                            " "
+                        };
+                        let status = if a.active { "활성" } else { "비활성" };
+                        self.feed_lines.push(format!(
+                            "  {} Agent #{}: {} ({})",
+                            marker, a.id, a.name, status
+                        ));
+                    }
+                    // 다음 에이전트로 순환 전환
+                    let current = self.app_config.active_agent_id;
+                    let active_ids: Vec<u8> = self
+                        .app_config
+                        .agents
+                        .iter()
+                        .filter(|a| a.active)
+                        .map(|a| a.id)
+                        .collect();
+                    if active_ids.len() > 1 {
+                        let pos = active_ids.iter().position(|&id| id == current).unwrap_or(0);
+                        let next = active_ids[(pos + 1) % active_ids.len()];
+                        self.app_config.active_agent_id = next;
+                        // 이름을 먼저 복사하여 borrow 해제
+                        let agent_name = self
+                            .app_config
+                            .active_agent()
+                            .map(|a| a.name.clone())
+                            .unwrap_or_default();
+                        if !agent_name.is_empty() {
+                            self.app_config.agent_name = agent_name.clone();
+                            self.feed_lines
+                                .push(format!("  → 에이전트 #{}({})로 전환!", next, agent_name));
+                        }
+                    } else {
+                        self.feed_lines
+                            .push("  (전환 가능한 다른 에이전트 없음)".to_string());
+                    }
+                }
+            }
+            KeyCode::Char('a') => {
+                // [v0.3.0] 에이전트 추가
+                let names = ["Alpha", "Beta", "Gamma"];
+                let next_name = names.get(self.app_config.agents.len()).unwrap_or(&"Agent");
+                match self.app_config.add_agent(next_name) {
+                    Ok(id) => {
+                        self.feed_lines.push(format!(
+                            "[{}] ✅ 에이전트 #{} ({}) 추가 완료",
+                            timestamp(),
+                            id,
+                            next_name
+                        ));
+                    }
+                    Err(e) => {
+                        self.feed_lines.push(format!("[{}] ❌ {}", timestamp(), e));
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -991,6 +1058,8 @@ impl App {
             Line::from(Span::styled("  [2] Model APIs", theme::text())),
             Line::from(Span::styled("  [3] Skills (TOML+Rhai)", theme::text())),
             Line::from(Span::styled("  [4] Time Machine", theme::text())),
+            Line::from(Span::styled("  [5] Agent Switch", theme::text())),
+            Line::from(Span::styled("  [A] Add Agent", theme::text())),
         ];
         let sys_block = Block::bordered()
             .title(Span::styled("─ SYSTEM ─", theme::title()))
@@ -1021,7 +1090,8 @@ impl App {
         frame.render_widget(feed_widget, main[1]);
 
         // 상태바
-        let status = Paragraph::new(" [Q] Quit  [1-4] Menu  [U] Undo Last").style(theme::muted());
+        let status =
+            Paragraph::new(" [Q] Quit  [1-5] Menu  [A] Add Agent  [U] Undo").style(theme::muted());
         frame.render_widget(status, outer[2]);
     }
 }

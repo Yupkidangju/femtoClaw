@@ -1,5 +1,6 @@
 // femtoClaw — 설정(Config) 관리 모듈
-// [v0.1.0] Step 1: config.enc 파일의 직렬화/역직렬화 및 디스크 I/O.
+// [v0.3.0] Step 1/8a: config.enc 파일의 직렬화/역직렬화 및 디스크 I/O.
+// [v0.3.0] 멀티 에이전트 설정 모델 추가 (AgentConfig, 최대 3개)
 //
 // AppConfig 구조체를 JSON으로 직렬화한 후 crypto 모듈로 암호화하여 저장하고,
 // 복호화 후 역직렬화하여 로드한다.
@@ -58,25 +59,99 @@ pub struct TelegramConfig {
     pub verified: bool,
 }
 
-/// [v0.1.0] 앱 전체 설정 구조체.
+/// [v0.3.0] 개별 에이전트 설정.
+/// 각 에이전트는 별도의 LLM 설정과 이름을 가진다.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentConfig {
+    /// 에이전트 ID (1~3)
+    pub id: u8,
+    /// 에이전트 이름
+    pub name: String,
+    /// LLM 공급자 설정
+    pub llm_provider: Option<LlmProviderConfig>,
+    /// 활성 여부
+    pub active: bool,
+}
+
+impl AgentConfig {
+    /// 기본 에이전트 생성
+    pub fn new(id: u8, name: &str) -> Self {
+        Self {
+            id,
+            name: name.to_string(),
+            llm_provider: None,
+            active: true,
+        }
+    }
+}
+
+/// [v0.3.0] 앓 전체 설정 구조체.
 /// config.enc에 암호화되어 저장되는 최상위 데이터 모델.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppConfig {
-    /// LLM 공급자 설정 (하나 이상 등록 가능)
+    /// [v0.1 호환] 단일 LLM 공급자 설정 (에이전트 #1의 바로가기)
     pub llm_provider: Option<LlmProviderConfig>,
-    /// 텔레그램 봇 설정
+    /// 텔레그램 봇 설정 (전체 공유)
     pub telegram: Option<TelegramConfig>,
-    /// 활성 에이전트 이름 (v0.1은 단일 에이전트)
+    /// [v0.1 호환] 활성 에이전트 이름
     pub agent_name: String,
+    /// [v0.3.0] 멀티 에이전트 목록 (최대 3개)
+    #[serde(default)]
+    pub agents: Vec<AgentConfig>,
+    /// [v0.3.0] 현재 활성 에이전트 ID
+    #[serde(default = "default_active_agent")]
+    pub active_agent_id: u8,
+}
+
+fn default_active_agent() -> u8 {
+    1
 }
 
 impl Default for AppConfig {
-    /// 기본 설정: 모든 필드가 비어있는 초기 상태
     fn default() -> Self {
+        // [v0.3.0] 기본 에이전트 #1 자동 생성
         Self {
             llm_provider: None,
             telegram: None,
             agent_name: "Alpha".to_string(),
+            agents: vec![AgentConfig::new(1, "Alpha")],
+            active_agent_id: 1,
+        }
+    }
+}
+
+impl AppConfig {
+    /// [v0.3.0] 활성 에이전트 설정 반환
+    pub fn active_agent(&self) -> Option<&AgentConfig> {
+        self.agents.iter().find(|a| a.id == self.active_agent_id)
+    }
+
+    /// [v0.3.0] 활성 에이전트 설정 가변 참조
+    pub fn active_agent_mut(&mut self) -> Option<&mut AgentConfig> {
+        let id = self.active_agent_id;
+        self.agents.iter_mut().find(|a| a.id == id)
+    }
+
+    /// [v0.3.0] 에이전트 추가 (최대 3개 제한)
+    pub fn add_agent(&mut self, name: &str) -> Result<u8, String> {
+        if self.agents.len() >= 3 {
+            return Err("에이전트는 최대 3개까지 등록 가능합니다".to_string());
+        }
+        let next_id = self.agents.iter().map(|a| a.id).max().unwrap_or(0) + 1;
+        self.agents.push(AgentConfig::new(next_id, name));
+        Ok(next_id)
+    }
+
+    /// [v0.3.0] 에이전트 전환
+    pub fn switch_agent(&mut self, id: u8) -> Result<(), String> {
+        if self.agents.iter().any(|a| a.id == id && a.active) {
+            self.active_agent_id = id;
+            Ok(())
+        } else {
+            Err(format!(
+                "에이전트 #{}을(를) 찾을 수 없거나 비활성화 상태입니다",
+                id
+            ))
         }
     }
 }
@@ -150,6 +225,8 @@ mod tests {
                 verified: true,
             }),
             agent_name: "TestAgent".to_string(),
+            agents: vec![AgentConfig::new(1, "TestAgent")],
+            active_agent_id: 1,
         };
 
         let password = b"roundtrip-test-password";
