@@ -17,6 +17,7 @@ mod error;
 mod sandbox;
 mod security;
 mod skills;
+mod tools;
 mod tui;
 
 use error::FemtoResult;
