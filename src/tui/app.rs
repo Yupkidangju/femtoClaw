@@ -365,13 +365,19 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
             KeyCode::Char('1') => {
-                self.feed_lines.push(format!(
-                    "[{}] Agent Status — Step 3에서 구현 예정",
-                    timestamp()
-                ));
+                // [v0.2.0] 에이전트 상태 표시
+                self.feed_lines
+                    .push(format!("[{}] ━━ Agent Status ━━", timestamp()));
+                self.feed_lines
+                    .push(format!("  에이전트: {}", self.app_config.agent_name));
+                if let Some(ref llm) = self.app_config.llm_provider {
+                    self.feed_lines
+                        .push(format!("  모델: {} ({:?})", llm.model, llm.preset));
+                }
+                self.feed_lines
+                    .push(format!("  보안: Jailing=ON | ChaCha20=ON"));
             }
             KeyCode::Char('2') => {
-                // 현재 설정된 LLM 정보 표시
                 if let Some(ref llm) = self.app_config.llm_provider {
                     self.feed_lines.push(format!(
                         "[{}] Model API: {:?} / {} / {}",
@@ -386,16 +392,88 @@ impl App {
                 }
             }
             KeyCode::Char('3') => {
-                self.feed_lines.push(format!(
-                    "[{}] Skill List — Step 5에서 구현 예정",
-                    timestamp()
-                ));
+                // [v0.2.0] 스킬 목록 표시 (TOML + Rhai 하이브리드)
+                self.feed_lines
+                    .push(format!("[{}] ━━ Skill List (TOML + Rhai) ━━", timestamp()));
+                // skills/core/ 로드
+                let core_dir = self.paths.skills_core.clone();
+                let user_dir = self.paths.skills_user.clone();
+                match crate::skills::load_skills_from_dir(&core_dir, true) {
+                    Ok(core_skills) => {
+                        for s in &core_skills {
+                            let tag = match s.skill_type {
+                                crate::skills::SkillType::Static => "TOML",
+                                crate::skills::SkillType::Dynamic => "Rhai",
+                            };
+                            self.feed_lines
+                                .push(format!("  [내장][{}] {} — {}", tag, s.name, s.description));
+                        }
+                    }
+                    Err(e) => self.feed_lines.push(format!("  core 로드 실패: {}", e)),
+                }
+                match crate::skills::load_skills_from_dir(&user_dir, false) {
+                    Ok(user_skills) => {
+                        for s in &user_skills {
+                            let tag = match s.skill_type {
+                                crate::skills::SkillType::Static => "TOML",
+                                crate::skills::SkillType::Dynamic => "Rhai",
+                            };
+                            self.feed_lines.push(format!(
+                                "  [사용자][{}] {} — {}",
+                                tag, s.name, s.description
+                            ));
+                        }
+                    }
+                    Err(e) => self.feed_lines.push(format!("  user 로드 실패: {}", e)),
+                }
             }
             KeyCode::Char('4') => {
+                // [v0.2.0] 타임머신 — DB에서 최근 10건 조회
+                self.feed_lines
+                    .push(format!("[{}] ━━ Time Machine (최근 10건) ━━", timestamp()));
                 self.feed_lines.push(format!(
-                    "[{}] Recent Actions — Step 3 DB 연동 후 구현",
-                    timestamp()
+                    "  {:>4} | {:>6} | {:>6} | {:<30} | {}",
+                    "#", "유형", "상태", "요약", "시각"
                 ));
+                self.feed_lines.push(format!("  {}", "─".repeat(70)));
+                let db_path = self.paths.db_dir.join("femto_state.db");
+                match crate::db::FemtoDb::open(&db_path) {
+                    Ok(db) => match db.actions_paged(0, 10) {
+                        Ok(records) => {
+                            if records.is_empty() {
+                                self.feed_lines.push("  (기록 없음)".to_string());
+                            }
+                            for r in &records {
+                                let status = if r.undone { "↩ Undo" } else { "✅ 완료" };
+                                let summary_trunc = if r.summary.len() > 28 {
+                                    format!("{}...", &r.summary[..28])
+                                } else {
+                                    r.summary.clone()
+                                };
+                                self.feed_lines.push(format!(
+                                    "  {:>4} | {:>6} | {:>6} | {:<30} | {}",
+                                    r.id,
+                                    r.action_type.display_name(),
+                                    status,
+                                    summary_trunc,
+                                    r.timestamp
+                                ));
+                            }
+                            match db.action_count() {
+                                Ok(count) => {
+                                    self.feed_lines.push(format!("  ── 전체 {} 건 ──", count));
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                        Err(e) => {
+                            self.feed_lines.push(format!("  DB 조회 실패: {}", e));
+                        }
+                    },
+                    Err(e) => {
+                        self.feed_lines.push(format!("  DB 열기 실패: {}", e));
+                    }
+                }
             }
             _ => {}
         }
@@ -911,8 +989,8 @@ impl App {
             Line::from(Span::styled(" MENU", theme::title())),
             Line::from(Span::styled("  [1] Agent Status", theme::text())),
             Line::from(Span::styled("  [2] Model APIs", theme::text())),
-            Line::from(Span::styled("  [3] Skill List", theme::text())),
-            Line::from(Span::styled("  [4] Recent Actions", theme::text())),
+            Line::from(Span::styled("  [3] Skills (TOML+Rhai)", theme::text())),
+            Line::from(Span::styled("  [4] Time Machine", theme::text())),
         ];
         let sys_block = Block::bordered()
             .title(Span::styled("─ SYSTEM ─", theme::title()))
@@ -943,9 +1021,7 @@ impl App {
         frame.render_widget(feed_widget, main[1]);
 
         // 상태바
-        let status =
-            Paragraph::new(" [Q] Quit    [U] Undo Last    [↑/↓] Navigate    [Enter] Select")
-                .style(theme::muted());
+        let status = Paragraph::new(" [Q] Quit  [1-4] Menu  [U] Undo Last").style(theme::muted());
         frame.render_widget(status, outer[2]);
     }
 }

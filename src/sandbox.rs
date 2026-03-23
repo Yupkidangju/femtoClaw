@@ -35,15 +35,20 @@ pub struct SandboxPaths {
     pub config_enc: PathBuf,
     /// SQLite DB 파일 경로
     pub db_file: PathBuf,
+    /// [v0.2.0] DB 디렉토리 경로
+    pub db_dir: PathBuf,
     /// 헤드리스 모드 로그 파일 경로
     pub log_file: PathBuf,
     /// 에이전트 작업 공간 루트 (Jailing 경계)
     pub workspace: PathBuf,
+    /// [v0.2.0] 내장 스킬 디렉토리
+    pub skills_core: PathBuf,
+    /// [v0.2.0] 사용자 스킬 디렉토리
+    pub skills_user: PathBuf,
 }
 
 impl SandboxPaths {
     /// [v0.1.0] OS별 홈 디렉토리를 기반으로 샌드박스 경로를 생성한다.
-    /// `dirs::home_dir()`를 사용하여 크로스 플랫폼 호환성을 보장한다.
     pub fn resolve() -> FemtoResult<Self> {
         let home = dirs::home_dir().ok_or(FemtoError::HomeDirectoryNotFound)?;
         let root = home.join(SANDBOX_DIR_NAME);
@@ -52,8 +57,11 @@ impl SandboxPaths {
             lock_file: root.join(".lock"),
             config_enc: root.join("config.enc"),
             db_file: root.join("db").join("femto_state.db"),
+            db_dir: root.join("db"),
             log_file: root.join("logs").join("femtoclaw.log"),
             workspace: root.join("workspace"),
+            skills_core: root.join("skills").join("core"),
+            skills_user: root.join("skills").join("user"),
             root,
         })
     }
