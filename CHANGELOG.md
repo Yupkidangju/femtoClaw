@@ -4,6 +4,26 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며,
 버전 관리는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+
+## [0.4.0] - 2026-03-23
+
+### 추가됨 (Added)
+- **[Step 9a] Tool Registry** — ToolDef, ToolParam, SecurityLevel 구조체 + BUILTIN_TOOLS 5종 등록
+- **[Step 9b] System Prompt Builder** — LLM system message에 도구 명세 + Jailing 개념 + 에러 규칙 자동 주입
+- **[Step 9c] Safe Tool Executor** — 검증 → Jailing → 실행 → 에러 복구 파이프라인, 3회 실패 자동 중단
+- **[Step 9d] Jailing Guide** — 사용자가 Jailing을 몰라도 에이전트가 친절하게 안내하는 메시지 시스템
+- **[Step 9e] Tool Audit** — ActionType에 ToolCall + SecurityEvent 추가, DB 감사 기록 지원
+- **src/tools/ 모듈** — registry.rs, prompt.rs, executor.rs, guide.rs
+
+### 변경됨 (Changed)
+- Cargo.toml 버전: 0.3.0 → **0.4.0**
+- spec.md §13 Tool Harness 상세 사양 추가
+- DB ActionType 확장: ToolCall(도구), SecurityEvent(보안)
+
+### 참고사항
+- **v0.4.0 전체 완료** — Step 9a~9e, 74개 테스트 통과
+- 핵심 철학: "도구가 있으면 거기에 잘 태워야 한다"
+
 ## [0.3.0] - 2026-03-23
 
 ### 추가됨 (Added)

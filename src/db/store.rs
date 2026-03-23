@@ -29,6 +29,10 @@ pub enum ActionType {
     SystemEvent,
     /// [v0.2.0] Rhai 스킬 실행
     SkillRun,
+    /// [v0.4.0] 도구 호출 (Tool Harness)
+    ToolCall,
+    /// [v0.4.0] 보안 이벤트 (Jailing 차단 등)
+    SecurityEvent,
 }
 
 impl ActionType {
@@ -41,6 +45,8 @@ impl ActionType {
             ActionType::ApiCall => "api_call",
             ActionType::SystemEvent => "system_event",
             ActionType::SkillRun => "skill_run",
+            ActionType::ToolCall => "tool_call",
+            ActionType::SecurityEvent => "security_event",
         }
     }
 
@@ -52,6 +58,8 @@ impl ActionType {
             "file_operation" => ActionType::FileOperation,
             "api_call" => ActionType::ApiCall,
             "skill_run" => ActionType::SkillRun,
+            "tool_call" => ActionType::ToolCall,
+            "security_event" => ActionType::SecurityEvent,
             _ => ActionType::SystemEvent,
         }
     }
@@ -65,6 +73,8 @@ impl ActionType {
             ActionType::ApiCall => "API",
             ActionType::SystemEvent => "시스템",
             ActionType::SkillRun => "스킬",
+            ActionType::ToolCall => "도구",
+            ActionType::SecurityEvent => "보안",
         }
     }
 }
