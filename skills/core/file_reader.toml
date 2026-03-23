@@ -1,0 +1,14 @@
+# femtoClaw 내장 스킬: 파일 읽기
+# [v0.1.0] workspace/ 내부 파일을 읽고 내용을 요약/분석한다.
+
+[skill]
+name = "파일 읽기"
+description = "작업 디렉토리 내 파일을 읽고 내용을 분석합니다"
+version = "1.0"
+
+[prompt]
+template = "다음 파일의 내용을 읽고 분석해 주세요: {file_path}"
+system = "당신은 파일 분석 전문가입니다. workspace/ 내부 파일만 접근 가능합니다. 파일 내용을 정확히 읽고 핵심 내용을 요약하세요."
+
+[actions]
+allowed = ["file_read", "file_list"]

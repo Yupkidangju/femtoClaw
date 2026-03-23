@@ -24,6 +24,18 @@
 - **[Step 2] 입력 방어 로직** — 글자 수 상한(PW 128, Key 256, Model 64, Token 128) + 표시 잘림
 - **[Step 2] Windows KeyEvent 필터** — `KeyEventKind::Press`만 처리 (Release/Repeat 무시)
 - **[Step 2] 대시보드 메뉴 스텁** — [1]-[4] 키 피드백 응답
+- **[Step 3] SQLite WAL + ZSTD 압축 DB** — 에이전트 액션 저장, Undo, 무결성 검사, 백업/복구
+- **[Step 4] 텔레그램 봇** — teloxide Long-Polling, PIN 페어링, LLM 에이전트 클라이언트
+- **[Step 4] Exponential Backoff** — 1→2→4→...→60초 재시도, 5분 경고 플래그
+- **[Step 4] 오프라인 큐잉** — 네트워크 끊김 시 메시지 대기열 (최대 크기 제한)
+- **[Step 4] Headless 모드** — config.enc 로드 → 봇 시작 → 이벤트 루프
+- **[Step 4] Graceful Shutdown** — ctrlc + AtomicBool + shutdown_token 연동
+- **[Step 5] Path Jailing** — workspace 강제 제한, ../ 순회 차단, symlink 검증
+- **[Step 5] 블랙리스트** — 20개 파괴 명령어 필터링
+- **[Step 5] TOML 스킬 시스템** — core/user 디렉토리 스캔, 저장/로드
+- **[Step 5] 내장 스킬 3종** — 파일 읽기, 코드 리뷰, 요약 어시스턴트
+- **빌드 스크립트** — Windows/Linux 명령형 + 대화형 (build.bat/.sh, build_interactive.bat/.sh)
+- **CI/CD** — GitHub Actions 4단계 파이프라인 (Lint → Test → Build Win+Linux → Release)
 
 ### 변경됨 (Changed)
 - spec.md 전면 개정: v0.1 경량화 방향 반영
@@ -40,7 +52,8 @@
 - 멀티 에이전트 라우팅 로직 (v0.3 이후 검토)
 
 ### 참고사항
-- 현재 단계: **Step 1 완료, Step 2 완료** (빌드/테스트 통과, 사용자 검증 완료)
-- ZSTD 압축은 라즈베리 파이 32GB 생존을 위해 유지 (저장 수명 20배 연장)
-- 다음 구현 대상: Step 3 (Database & Compression Engine)
+- **v0.1.0 전체 완료** — Step 1~5 + CI/CD, 37개 테스트 통과
+- RPi는 네이티브 빌드 권장 (rusqlite bundled + zstd C-binding 크로스컴파일 제한)
+- 다음 버전: **v0.2 — Rhai 동적 스킬 엔진 + 풀 타임머신 UI**
+
 

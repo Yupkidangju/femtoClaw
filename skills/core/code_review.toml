@@ -1,0 +1,14 @@
+# femtoClaw 내장 스킬: 코드 리뷰
+# [v0.1.0] 소스 코드를 읽고 품질/보안/성능 관점에서 리뷰한다.
+
+[skill]
+name = "코드 리뷰"
+description = "소스 코드를 분석하여 품질, 보안, 성능 관점에서 리뷰합니다"
+version = "1.0"
+
+[prompt]
+template = "다음 코드를 리뷰해 주세요:\n\n파일: {file_path}\n\n관점: {review_focus}\n\n코드 내용:\n{code_content}"
+system = "당신은 시니어 코드 리뷰어입니다. 보안 취약점, 성능 병목, 코드 품질 문제를 식별하고 개선안을 제시하세요. 한국어로 리뷰 결과를 작성하세요."
+
+[actions]
+allowed = ["file_read", "file_list", "chat_only"]
