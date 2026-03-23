@@ -41,11 +41,12 @@ jobs:
       - name: 테스트 실행
         run: cargo test --verbose
 
-  # ━━━ 3단계: 릴리즈 빌드 (3개 타겟) ━━━
+  # ━━━ 3단계: 릴리즈 빌드 (Windows + Linux) ━━━
   build:
     name: Build (${{ matrix.target.label }})
     needs: test
     strategy:
+      fail-fast: false
       matrix:
         target:
           - label: Windows x64
@@ -53,51 +54,29 @@ jobs:
             triple: x86_64-pc-windows-msvc
             artifact: femtoclaw-windows-x64.exe
             ext: .exe
-            use_cross: false
           - label: Linux x64
             os: ubuntu-latest
             triple: x86_64-unknown-linux-gnu
             artifact: femtoclaw-linux-x64
             ext: ""
-            use_cross: false
-          - label: Raspberry Pi (ARM64)
-            os: ubuntu-latest
-            triple: aarch64-unknown-linux-gnu
-            artifact: femtoclaw-rpi-aarch64
-            ext: ""
-            use_cross: true
     runs-on: ${{ matrix.target.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target.triple }}
-
-      # cross 설치 (RPi Docker 기반 크로스컴파일)
-      - name: cross 설치
-        if: matrix.target.use_cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
       - uses: Swatinem/rust-cache@v2
 
-      - name: 릴리즈 빌드 (native)
-        if: "!matrix.target.use_cross"
-        run: cargo build --release --target ${{ matrix.target.triple }}
-
-      - name: 릴리즈 빌드 (cross)
-        if: matrix.target.use_cross
-        run: cross build --release --target ${{ matrix.target.triple }}
+      - name: 릴리즈 빌드
+        run: cargo build --release
 
       - name: 바이너리 복사
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target.triple }}/release/femtoclaw${{ matrix.target.ext }} dist/${{ matrix.target.artifact }}
+          cp target/release/femtoclaw${{ matrix.target.ext }} dist/${{ matrix.target.artifact }}
 
       - name: 바이너리 크기 출력
         shell: bash
-        run: |
-          ls -lh dist/${{ matrix.target.artifact }}
+        run: ls -lh dist/${{ matrix.target.artifact }}
 
       - name: 아티팩트 업로드
         uses: actions/upload-artifact@v4
@@ -105,10 +84,52 @@ jobs:
           name: ${{ matrix.target.artifact }}
           path: dist/${{ matrix.target.artifact }}
 
+  # ━━━ 3b단계: RPi 빌드 (옵셔널 — Docker cross) ━━━
+  build-rpi:
+    name: Build (Raspberry Pi ARM64)
+    needs: test
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+
+      - name: ARM 크로스컴파일러 설치
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOF'
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: 릴리즈 빌드
+        env:
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target aarch64-unknown-linux-gnu
+
+      - name: 바이너리 복사
+        run: |
+          mkdir -p dist
+          cp target/aarch64-unknown-linux-gnu/release/femtoclaw dist/femtoclaw-rpi-aarch64
+
+      - name: 아티팩트 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: femtoclaw-rpi-aarch64
+          path: dist/femtoclaw-rpi-aarch64
+
   # ━━━ 4단계: GitHub Release (태그 푸시 시) ━━━
   release:
     name: Create Release
-    needs: build
+    needs: [build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
