@@ -24,7 +24,7 @@ jobs:
       - name: 포맷 검사
         run: cargo fmt --all -- --check
       - name: Clippy 린트
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -W clippy::all
 
   # ━━━ 2단계: 테스트 (Windows + Linux) ━━━
   test:

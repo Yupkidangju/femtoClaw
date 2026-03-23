@@ -1,6 +1,6 @@
 @echo off
 REM femtoClaw — Windows 빌드 스크립트 (명령형/비대화식)
-REM [v0.1.0] CI/CD 및 자동화용
+REM [v0.4.0] CI/CD 및 자동화용
 REM
 REM 사용법:
 REM   build.bat                  # 릴리즈 빌드
@@ -51,7 +51,7 @@ exit /b 0
 :main
 echo.
 echo +------------------------------------------+
-echo ^|  femtoClaw Build System v0.1.0           ^|
+echo ^|  femtoClaw Build System v0.4.0           ^|
 echo +------------------------------------------+
 echo.
 

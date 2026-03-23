@@ -564,14 +564,20 @@ impl App {
                 return;
             }
             // 기본 설정으로 config.enc 생성
-            let _ = config::save_config(
+            match config::save_config(
                 &self.app_config,
                 self.password.as_bytes(),
                 &self.paths.config_enc,
-            );
-            self.feed_lines
-                .push(format!("[{}] 마스터 키 생성 완료", timestamp()));
-            self.screen = Screen::Onboard;
+            ) {
+                Ok(_) => {
+                    self.feed_lines
+                        .push(format!("[{}] 마스터 키 생성 완료", timestamp()));
+                    self.screen = Screen::Onboard;
+                }
+                Err(e) => {
+                    self.pw_error = Some(format!("설정 저장 실패: {}", e));
+                }
+            }
         } else {
             // 재실행: 기존 config.enc 복호화 시도
             match config::load_config(self.password.as_bytes(), &self.paths.config_enc) {
@@ -694,15 +700,24 @@ impl App {
         }
 
         // config.enc 저장
-        let _ = config::save_config(
+        match config::save_config(
             &self.app_config,
             self.password.as_bytes(),
             &self.paths.config_enc,
-        );
-
-        self.feed_lines
-            .push(format!("[{}] 설정 저장 완료 → 대시보드", timestamp()));
-        self.screen = Screen::Dashboard;
+        ) {
+            Ok(_) => {
+                self.feed_lines
+                    .push(format!("[{}] 설정 저장 완료 → 대시보드", timestamp()));
+                self.screen = Screen::Dashboard;
+            }
+            Err(e) => {
+                self.feed_lines.push(format!(
+                    "[{}] ❌ 설정 저장 실패: {} — 디스크 용량/권한을 확인하세요",
+                    timestamp(),
+                    e
+                ));
+            }
+        }
     }
 
     // === 화면 렌더링 ===

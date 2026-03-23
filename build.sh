@@ -1,6 +1,6 @@
 #!/bin/bash
 # femtoClaw — 크로스 플랫폼 빌드 스크립트 (Linux/macOS/Raspberry Pi)
-# [v0.1.0] 명령형 (비대화식) — CI/CD 및 자동화용
+# [v0.4.0] 명령형 (비대화식) — CI/CD 및 자동화용
 #
 # 사용법:
 #   ./build.sh                    # 현재 타겟 릴리즈 빌드
@@ -122,7 +122,7 @@ build_target() {
 # === 실행 ===
 echo ""
 echo "┌──────────────────────────────────────────┐"
-echo "│  femtoClaw Build System v0.1.0           │"
+echo "│  femtoClaw Build System v0.4.0           │"
 echo "└──────────────────────────────────────────┘"
 echo ""
 

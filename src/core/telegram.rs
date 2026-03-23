@@ -74,6 +74,18 @@ impl BotState {
         }
     }
 
+    /// [v0.4.0] 이전 페어링 정보를 복원하여 생성
+    /// config.enc에 저장된 chat_id가 있으면 재시작 시 자동 페어링
+    pub fn new_with_paired(pin: String, chat_id: Option<i64>) -> Self {
+        BotState {
+            pin,
+            paired_chat_id: chat_id,
+            paired_username: chat_id.map(|id| format!("restored_{}", id)),
+            active_agent_id: 1,
+            agent_ids: vec![1],
+        }
+    }
+
     /// [v0.3.0] 에이전트 목록을 설정
     pub fn set_agents(&mut self, ids: Vec<u8>) {
         self.agent_ids = ids;
@@ -186,13 +198,15 @@ pub fn create_shutdown_flag() -> Arc<AtomicBool> {
     Arc::new(AtomicBool::new(false))
 }
 
-/// [v0.1.0] 텔레그램 봇을 별도 스레드에서 시작한다.
+/// [v0.4.0] 텔레그램 봇을 별도 스레드에서 시작한다.
 /// TUI 메인 루프를 블로킹하지 않음.
+/// saved_chat_id: config.enc에 저장된 이전 페어링 chat_id (있으면 자동 복원)
 ///
-/// 반환: (이벤트 수신 채널, 명령 송신 채널, PIN 코드, 종료 플래그)
+/// 반환: (이벤트 수신 채널, 명령 송신 채널, PIN 코드)
 pub fn spawn_bot(
     token: String,
     shutdown_flag: Arc<AtomicBool>,
+    saved_chat_id: Option<i64>,
 ) -> (mpsc::Receiver<BotEvent>, mpsc::Sender<BotCommand>, String) {
     let (event_tx, event_rx) = mpsc::channel::<BotEvent>();
     let (cmd_tx, cmd_rx) = mpsc::channel::<BotCommand>();
@@ -203,6 +217,14 @@ pub fn spawn_bot(
     // 봇 시작 이벤트 즉시 전송
     let _ = event_tx.send(BotEvent::Started(pin.clone()));
 
+    // [v0.4.0] 이전 페어링 복원 시 알림
+    if saved_chat_id.is_some() {
+        let _ = event_tx.send(BotEvent::Paired(
+            saved_chat_id.unwrap(),
+            "restored".to_string(),
+        ));
+    }
+
     std::thread::spawn(move || {
         // 봇 전용 tokio 런타임 생성
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -212,7 +234,15 @@ pub fn spawn_bot(
             .expect("tokio 런타임 생성 실패");
 
         rt.block_on(async move {
-            run_bot(token, pin_clone, event_tx, cmd_rx, shutdown_flag).await;
+            run_bot(
+                token,
+                pin_clone,
+                event_tx,
+                cmd_rx,
+                shutdown_flag,
+                saved_chat_id,
+            )
+            .await;
         });
     });
 
@@ -220,12 +250,14 @@ pub fn spawn_bot(
 }
 
 /// 봇 메인 루프 (tokio async) — Backoff 포함
+/// [v0.4.0] saved_chat_id: 이전 페어링 복원용
 async fn run_bot(
     token: String,
     pin: String,
     event_tx: mpsc::Sender<BotEvent>,
     _cmd_rx: mpsc::Receiver<BotCommand>,
     shutdown_flag: Arc<AtomicBool>,
+    saved_chat_id: Option<i64>,
 ) {
     let mut backoff = Backoff::new();
 
@@ -237,7 +269,11 @@ async fn run_bot(
         }
 
         let bot = Bot::new(&token);
-        let state = Arc::new(Mutex::new(BotState::new(pin.clone())));
+        // [v0.4.0] 이전 페어링 정보가 있으면 복원하여 /pair 생략
+        let state = Arc::new(Mutex::new(BotState::new_with_paired(
+            pin.clone(),
+            saved_chat_id,
+        )));
         let tx = event_tx.clone();
         let flag = shutdown_flag.clone();
 

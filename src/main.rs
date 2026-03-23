@@ -91,7 +91,7 @@ fn run() -> FemtoResult<()> {
 /// config.enc에서 설정 로드 → 텔레그램 봇 시작 → 종료 신호까지 대기.
 fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -> FemtoResult<()> {
     eprintln!("┌──────────────────────────────────────────┐");
-    eprintln!("│  femtoClaw v0.1.0-beta — Headless Mode   │");
+    eprintln!("│  femtoClaw v0.4.0 — Headless Mode          │");
     eprintln!("└──────────────────────────────────────────┘");
 
     // config.enc 존재 여부 확인
@@ -126,8 +126,11 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
 
     eprintln!("[*] 텔레그램 봇 시작 중...");
 
+    // [v0.4.0] 이전 페어링 chat_id 복원
+    let saved_chat_id = app_config.telegram.as_ref().and_then(|tg| tg.chat_id);
+
     let bot_shutdown = shutdown_flag.clone();
-    let (event_rx, _cmd_tx, pin) = core::telegram::spawn_bot(tg_token, bot_shutdown);
+    let (event_rx, _cmd_tx, pin) = core::telegram::spawn_bot(tg_token, bot_shutdown, saved_chat_id);
 
     eprintln!("[✓] 봇 활성 — 페어링 PIN: {}", pin);
     eprintln!("[*] Ctrl+C로 종료합니다.");

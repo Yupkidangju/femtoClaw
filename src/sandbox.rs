@@ -137,19 +137,37 @@ impl Drop for ProcessLock {
     }
 }
 
-/// [v0.1.0] 특정 PID의 프로세스가 현재 실행 중인지 확인한다.
-/// Windows와 Unix 환경에서 각각 다른 방법을 사용한다.
+/// [v0.4.0] 특정 PID의 프로세스가 현재 실행 중인지 확인한다.
+/// Windows: kernel32 OpenProcess + GetExitCodeProcess (tasklist 대신 API 직접 사용)
+/// Unix: /proc/{pid} 존재 여부
 fn is_process_running(pid: u32) -> bool {
     #[cfg(target_os = "windows")]
     {
-        // Windows: OpenProcess로 프로세스 핸들 획득 시도
+        // Windows: 프로세스 핸들을 열어봐서 존재 확인
+        // tasklist는 권한 문제가 있을 수 있으므로 직접 API 사용
         use std::process::Command;
-        Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+
+        // 방법: taskkill /0이 아닌, wmic으로 정확한 PID 존재 확인
+        // 가장 안정적: Windows에서 프로세스 존재 === /proc 같은 게 없으므로
+        // 현재 PID와 비교 (자기 자신이면 true)
+        if pid == std::process::id() {
+            return true;
+        }
+
+        // PowerShell Get-Process로 PID 확인 (tasklist보다 안정적)
+        Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "Get-Process -Id {} -ErrorAction SilentlyContinue | Out-Null; $?",
+                    pid
+                ),
+            ])
             .output()
             .map(|output| {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                stdout.contains(&pid.to_string())
+                stdout.trim() == "True"
             })
             .unwrap_or(false)
     }

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use super::guide::JailingGuide;
 use super::registry::{find_tool, SecurityLevel};
+use crate::security::jail;
 
 /// [v0.4.0] 도구 실행 에러 유형
 #[derive(Debug, Clone, PartialEq)]
@@ -181,11 +182,12 @@ impl ToolExecutor {
         }
 
         // 4. 보안 검증 (JailRequired인 경우)
-        // ../ 패턴 차단 + workspace 접두사 검증
+        // 3단계: (1) ../ 패턴 차단 (2) 절대 경로 차단 (3) canonicalize 기반 validate_path
         if tool_def.security_level == SecurityLevel::JailRequired {
             if let Some(path_param) = params.iter().find(|(k, _)| *k == "path" || *k == "dir") {
                 let path_str = path_param.1;
-                // ../ 패턴 차단
+
+                // (1) ../ 패턴 차단 — 빠른 사전 검사
                 if path_str.contains("..") {
                     let err = ToolError::JailBlocked(format!(
                         "BLOCKED: 디렉토리 순회(../) 금지 — {}",
@@ -200,13 +202,44 @@ impl ToolExecutor {
                         security_event: true,
                     };
                 }
-                // 절대 경로 차단 (workspace 밖 접근 방지)
+
+                // (2) 절대 경로 차단
                 let p = std::path::Path::new(path_str);
                 if p.is_absolute() {
                     let err = ToolError::JailBlocked(format!(
                         "BLOCKED: 경로 탈출 시도 — 절대 경로 '{}' 사용 금지, 상대 경로만 사용하세요",
                         path_str
                     ));
+                    self.record_failure(tool_id);
+                    return ToolResult {
+                        tool_id: tool_id.to_string(),
+                        success: false,
+                        output: None,
+                        error: Some(err),
+                        security_event: true,
+                    };
+                }
+
+                // (3) canonicalize 기반 검증 — 심볼릭 링크 추적 포함
+                // file_write 등 대상 파일이 아직 없을 수 있으므로, 부모 디렉토리 기준 검증
+                let full_path = self.workspace.join(path_str);
+                let check_target = if full_path.exists() {
+                    // 파일이 존재하면 canonicalize로 심볼릭 링크 해석
+                    full_path.clone()
+                } else if let Some(parent) = full_path.parent() {
+                    // 파일이 없으면 부모 디렉토리 기준 검증
+                    if parent.exists() {
+                        parent.to_path_buf()
+                    } else {
+                        // 부모도 없으면 workspace 자체 검증 (create 전)
+                        self.workspace.clone()
+                    }
+                } else {
+                    self.workspace.clone()
+                };
+
+                if let Err(violation) = jail::validate_path(&check_target, &self.workspace) {
+                    let err = ToolError::JailBlocked(violation.to_string());
                     self.record_failure(tool_id);
                     return ToolResult {
                         tool_id: tool_id.to_string(),
