@@ -4,6 +4,29 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며,
 버전 관리는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [0.2.0] - 2026-03-23
+
+### 추가됨 (Added)
+- **[Step 6a] Rhai 동적 스킬 엔진** — sandboxed 실행 (ops 100만, stack 32, string 1MB 제한)
+- **[Step 6a] 호스트 함수 5종** — file_read, file_write, file_list, sleep, print
+- **[Step 6b] 하이브리드 스킬 로더** — .toml + .rhai 공존, @name/@desc 메타데이터 파싱
+- **[Step 6c] TUI 스킬 실행기** — 대시보드 [3]에서 내장/사용자 스킬 목록 표시
+- **[Step 7a] DB 쿼리 확장** — 페이지네이션, 유형별 필터, 선택적 Undo, SkillRun 유형
+- **[Step 7b] TUI 타임머신** — 대시보드 [4]에서 전체 이력 테이블 뷰
+- **[Step 7c] 선택적 Undo** — undo_by_id()로 임의의 과거 액션 Undo
+- **예제 Rhai 스킬** — skills/core/auto_summarize.rhai
+
+### 변경됨 (Changed)
+- Cargo.toml 버전: 0.1.0-beta → **0.2.0**
+- spec.md v0.2 상세 사양 추가 (§10~§11)
+- DB 스키마 버전: 1 → **2** (action_type 인덱스 추가)
+- SandboxPaths에 skills_core, skills_user, db_dir 경로 추가
+- 대시보드 메뉴: [3] Skills (TOML+Rhai), [4] Time Machine
+
+### 참고사항
+- **v0.2.0 전체 완료** — Step 6a~6c + 7a~7c, 48개 테스트 통과
+- 다음 버전: **v0.3 — 멀티 에이전트 (최대 3개)**
+
 ## [0.1.0-beta] - 2026-03-23
 
 ### 추가됨 (Added)
