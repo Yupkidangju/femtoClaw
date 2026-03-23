@@ -1,12 +1,14 @@
 // femtoClaw — SQLite 데이터 저장소
-// [v0.1.0] Step 3: WAL 모드 초기화, 에이전트 행동 내역 스키마,
-// 트랜잭션 기반 상태 저장, 간소 Undo (최근 5건 + 마지막 Undo),
+// [v0.2.0] Step 3/7a: WAL 모드 초기화, 에이전트 행동 내역 스키마,
+// 트랜잭션 기반 상태 저장, 풀 타임머신 (페이지네이션 + 필터 + 선택적 Undo),
 // DB 무결성 검사 및 백업 자동 복구.
 //
-// 스키마 설계 원칙:
-//   - actions 테이블: 모든 에이전트 행동을 기록 (대화, 파일, API 등)
-//   - content 컬럼: ZSTD 압축된 BLOB (라즈베리 파이 용량 절약)
-//   - undone 플래그: Undo 시 true로 마킹 (물리 삭제 없음)
+// [v0.2.0] 변경사항:
+//   - ActionType에 SkillRun 추가 (Rhai 스킬 실행 기록)
+//   - actions_paged(): 페이지네이션 쿼리
+//   - actions_filtered(): 유형별 필터링 쿼리
+//   - undo_by_id(): 선택적 Undo (임의의 ID 지정)
+//   - action_count_filtered(): 필터 적용 카운트
 
 use super::compress::{compress_data, decompress_data};
 use rusqlite::{params, Connection};
@@ -25,6 +27,8 @@ pub enum ActionType {
     ApiCall,
     /// 시스템 이벤트 (부팅, 설정 변경 등)
     SystemEvent,
+    /// [v0.2.0] Rhai 스킬 실행
+    SkillRun,
 }
 
 impl ActionType {
@@ -36,6 +40,7 @@ impl ActionType {
             ActionType::FileOperation => "file_operation",
             ActionType::ApiCall => "api_call",
             ActionType::SystemEvent => "system_event",
+            ActionType::SkillRun => "skill_run",
         }
     }
 
@@ -46,7 +51,20 @@ impl ActionType {
             "agent_response" => ActionType::AgentResponse,
             "file_operation" => ActionType::FileOperation,
             "api_call" => ActionType::ApiCall,
+            "skill_run" => ActionType::SkillRun,
             _ => ActionType::SystemEvent,
+        }
+    }
+
+    /// [v0.2.0] 한국어 표시명
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ActionType::UserMessage => "대화",
+            ActionType::AgentResponse => "응답",
+            ActionType::FileOperation => "파일",
+            ActionType::ApiCall => "API",
+            ActionType::SystemEvent => "시스템",
+            ActionType::SkillRun => "스킬",
         }
     }
 }
@@ -63,7 +81,7 @@ pub struct ActionRecord {
     pub undone: bool,
 }
 
-/// [v0.1.0] SQLite WAL 기반 데이터 저장소.
+/// [v0.2.0] SQLite WAL 기반 데이터 저장소.
 /// DB 파일 경로: `~/.femtoclaw/db/femto_state.db`
 pub struct FemtoDb {
     conn: Connection,
@@ -72,20 +90,15 @@ pub struct FemtoDb {
 
 impl FemtoDb {
     /// DB를 열고 WAL 모드 활성화 + 스키마 초기화.
-    /// 파일이 없으면 자동 생성됨.
     pub fn open(db_path: &Path) -> Result<Self, String> {
-        // 상위 디렉토리 보장
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("DB 디렉토리 생성 실패: {}", e))?;
         }
 
         let conn = Connection::open(db_path).map_err(|e| format!("DB 열기 실패: {}", e))?;
 
-        // WAL 모드 활성화 (읽기/쓰기 병행, I/O 최적화)
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .map_err(|e| format!("WAL 모드 설정 실패: {}", e))?;
-
-        // 자동 체크포인트 간격 (1000 페이지마다)
         conn.execute_batch("PRAGMA wal_autocheckpoint=1000;")
             .map_err(|e| format!("체크포인트 설정 실패: {}", e))?;
 
@@ -110,23 +123,23 @@ impl FemtoDb {
                 undone      INTEGER NOT NULL DEFAULT 0
             );
 
-            -- 최근 조회 성능용 인덱스
             CREATE INDEX IF NOT EXISTS idx_actions_timestamp
                 ON actions(timestamp DESC);
 
-            -- Undo 대상 필터링용 인덱스
             CREATE INDEX IF NOT EXISTS idx_actions_undone
                 ON actions(undone);
 
-            -- 메타데이터 테이블 (DB 버전 관리용)
+            -- [v0.2.0] 유형별 필터링 성능용 인덱스
+            CREATE INDEX IF NOT EXISTS idx_actions_type
+                ON actions(action_type);
+
             CREATE TABLE IF NOT EXISTS metadata (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
 
-            -- DB 스키마 버전 기록 (향후 마이그레이션용)
             INSERT OR IGNORE INTO metadata (key, value)
-                VALUES ('schema_version', '1');
+                VALUES ('schema_version', '2');
             ",
             )
             .map_err(|e| format!("스키마 초기화 실패: {}", e))
@@ -139,7 +152,6 @@ impl FemtoDb {
         summary: &str,
         content: &str,
     ) -> Result<i64, String> {
-        // 콘텐츠 ZSTD 압축
         let compressed = compress_data(content.as_bytes());
 
         self.conn
@@ -166,8 +178,143 @@ impl FemtoDb {
             )
             .map_err(|e| format!("쿼리 준비 실패: {}", e))?;
 
+        self.parse_rows(&mut stmt, params![limit as i64])
+    }
+
+    /// [v0.2.0] 페이지네이션 쿼리 — 전체 기록(Undone 포함)을 페이지로 조회.
+    /// page: 0부터 시작, per_page: 한 페이지당 건수
+    pub fn actions_paged(&self, page: usize, per_page: usize) -> Result<Vec<ActionRecord>, String> {
+        let offset = page * per_page;
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, action_type, summary, content, timestamp, undone
+             FROM actions
+             ORDER BY id DESC
+             LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(|e| format!("쿼리 준비 실패: {}", e))?;
+
+        self.parse_rows(&mut stmt, params![per_page as i64, offset as i64])
+    }
+
+    /// [v0.2.0] 유형별 필터링 + 페이지네이션.
+    pub fn actions_filtered(
+        &self,
+        action_type: &ActionType,
+        page: usize,
+        per_page: usize,
+    ) -> Result<Vec<ActionRecord>, String> {
+        let offset = page * per_page;
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, action_type, summary, content, timestamp, undone
+             FROM actions
+             WHERE action_type = ?1
+             ORDER BY id DESC
+             LIMIT ?2 OFFSET ?3",
+            )
+            .map_err(|e| format!("쿼리 준비 실패: {}", e))?;
+
+        self.parse_rows(
+            &mut stmt,
+            params![action_type.as_str(), per_page as i64, offset as i64],
+        )
+    }
+
+    /// [v0.2.0] 특정 ID의 행동을 Undo한다 (선택적 Undo).
+    pub fn undo_by_id(&self, id: i64) -> Result<bool, String> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE actions SET undone = 1 WHERE id = ?1 AND undone = 0",
+                params![id],
+            )
+            .map_err(|e| format!("Undo 실패: {}", e))?;
+        Ok(affected > 0)
+    }
+
+    /// 마지막 행동을 Undo한다 (v0.1 호환).
+    pub fn undo_last(&self) -> Result<Option<ActionRecord>, String> {
+        let actions = self.recent_actions(1)?;
+        if let Some(action) = actions.into_iter().next() {
+            self.conn
+                .execute(
+                    "UPDATE actions SET undone = 1 WHERE id = ?1",
+                    params![action.id],
+                )
+                .map_err(|e| format!("Undo 실패: {}", e))?;
+
+            Ok(Some(ActionRecord {
+                undone: true,
+                ..action
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// DB 무결성을 검사한다.
+    pub fn check_integrity(&self) -> Result<bool, String> {
+        let result: String = self
+            .conn
+            .query_row("PRAGMA integrity_check;", [], |row| row.get(0))
+            .map_err(|e| format!("무결성 검사 실패: {}", e))?;
+        Ok(result == "ok")
+    }
+
+    /// DB 파일을 백업한다.
+    pub fn backup(&self) -> Result<PathBuf, String> {
+        self.conn
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .map_err(|e| format!("WAL 체크포인트 실패: {}", e))?;
+
+        let backup_path = self.db_path.with_extension("db.backup");
+        std::fs::copy(&self.db_path, &backup_path).map_err(|e| format!("백업 실패: {}", e))?;
+        Ok(backup_path)
+    }
+
+    /// 백업에서 DB를 복구한다.
+    pub fn restore_from_backup(&self) -> Result<(), String> {
+        let backup_path = self.db_path.with_extension("db.backup");
+        if !backup_path.exists() {
+            return Err("백업 파일이 없습니다".to_string());
+        }
+
+        let corrupted_path = self.db_path.with_extension("db.corrupted");
+        std::fs::rename(&self.db_path, &corrupted_path)
+            .map_err(|e| format!("손상 DB 이름 변경 실패: {}", e))?;
+        std::fs::copy(&backup_path, &self.db_path).map_err(|e| format!("백업 복원 실패: {}", e))?;
+        Ok(())
+    }
+
+    /// 전체 행동 수를 반환한다.
+    pub fn action_count(&self) -> Result<i64, String> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM actions", [], |row| row.get(0))
+            .map_err(|e| format!("카운트 조회 실패: {}", e))
+    }
+
+    /// [v0.2.0] 유형별 행동 수를 반환한다.
+    pub fn action_count_filtered(&self, action_type: &ActionType) -> Result<i64, String> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE action_type = ?1",
+                params![action_type.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("카운트 조회 실패: {}", e))
+    }
+
+    /// 내부 헬퍼: 쿼리 결과를 ActionRecord Vec으로 변환
+    fn parse_rows(
+        &self,
+        stmt: &mut rusqlite::Statement,
+        params: impl rusqlite::Params,
+    ) -> Result<Vec<ActionRecord>, String> {
         let rows = stmt
-            .query_map(params![limit as i64], |row| {
+            .query_map(params, |row| {
                 let id: i64 = row.get(0)?;
                 let action_type_str: String = row.get(1)?;
                 let summary: String = row.get(2)?;
@@ -175,7 +322,6 @@ impl FemtoDb {
                 let timestamp: String = row.get(4)?;
                 let undone: bool = row.get(5)?;
 
-                // ZSTD 압축 해제
                 let content = decompress_data(&compressed)
                     .and_then(|bytes| {
                         String::from_utf8(bytes).map_err(|e| format!("UTF-8 변환 실패: {}", e))
@@ -198,77 +344,6 @@ impl FemtoDb {
             records.push(row.map_err(|e| format!("행 파싱 실패: {}", e))?);
         }
         Ok(records)
-    }
-
-    /// 마지막 행동을 Undo한다 (물리 삭제 없이 undone=1 마킹).
-    /// 이미 Undo된 행동은 건너뛴다.
-    /// 반환값: Undo된 ActionRecord (없으면 None)
-    pub fn undo_last(&self) -> Result<Option<ActionRecord>, String> {
-        // 가장 최근의 Undo 안 된 행동 조회
-        let actions = self.recent_actions(1)?;
-        if let Some(action) = actions.into_iter().next() {
-            self.conn
-                .execute(
-                    "UPDATE actions SET undone = 1 WHERE id = ?1",
-                    params![action.id],
-                )
-                .map_err(|e| format!("Undo 실패: {}", e))?;
-
-            Ok(Some(ActionRecord {
-                undone: true,
-                ..action
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// DB 무결성을 검사한다 (SQLite PRAGMA integrity_check).
-    pub fn check_integrity(&self) -> Result<bool, String> {
-        let result: String = self
-            .conn
-            .query_row("PRAGMA integrity_check;", [], |row| row.get(0))
-            .map_err(|e| format!("무결성 검사 실패: {}", e))?;
-
-        Ok(result == "ok")
-    }
-
-    /// DB 파일을 백업한다 (파일 복사 방식).
-    /// 백업 전 WAL 체크포인트를 수행하여 모든 데이터가 메인 파일에 반영됨을 보장.
-    /// 백업 파일: `{원본경로}.backup`
-    pub fn backup(&self) -> Result<PathBuf, String> {
-        // WAL 체크포인트: WAL에 있는 모든 데이터를 메인 DB 파일에 기록
-        self.conn
-            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
-            .map_err(|e| format!("WAL 체크포인트 실패: {}", e))?;
-
-        let backup_path = self.db_path.with_extension("db.backup");
-        std::fs::copy(&self.db_path, &backup_path).map_err(|e| format!("백업 실패: {}", e))?;
-        Ok(backup_path)
-    }
-
-    /// 백업에서 DB를 복구한다.
-    /// 기존 DB를 `.corrupted`로 이름 변경 후 백업에서 복원.
-    pub fn restore_from_backup(&self) -> Result<(), String> {
-        let backup_path = self.db_path.with_extension("db.backup");
-        if !backup_path.exists() {
-            return Err("백업 파일이 없습니다".to_string());
-        }
-
-        let corrupted_path = self.db_path.with_extension("db.corrupted");
-        std::fs::rename(&self.db_path, &corrupted_path)
-            .map_err(|e| format!("손상 DB 이름 변경 실패: {}", e))?;
-
-        std::fs::copy(&backup_path, &self.db_path).map_err(|e| format!("백업 복원 실패: {}", e))?;
-
-        Ok(())
-    }
-
-    /// 전체 행동 수를 반환한다.
-    pub fn action_count(&self) -> Result<i64, String> {
-        self.conn
-            .query_row("SELECT COUNT(*) FROM actions", [], |row| row.get(0))
-            .map_err(|e| format!("카운트 조회 실패: {}", e))
     }
 }
 
@@ -313,7 +388,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "1");
+        assert_eq!(version, "2");
 
         cleanup(&path);
     }
@@ -440,6 +515,114 @@ mod tests {
             db_size,
             big_content.len()
         );
+
+        cleanup(&path);
+    }
+
+    // === [v0.2.0] 풀 타임머신 테스트 ===
+
+    #[test]
+    fn test_actions_paged() {
+        let path = temp_db_path();
+        let db = FemtoDb::open(&path).unwrap();
+
+        // 5건 삽입
+        for i in 1..=5 {
+            db.insert_action(
+                &ActionType::UserMessage,
+                &format!("메시지 {}", i),
+                &format!("내용 {}", i),
+            )
+            .unwrap();
+        }
+
+        // 1페이지(2건): 최신 2건
+        let page0 = db.actions_paged(0, 2).unwrap();
+        assert_eq!(page0.len(), 2);
+        assert_eq!(page0[0].summary, "메시지 5");
+        assert_eq!(page0[1].summary, "메시지 4");
+
+        // 2페이지(2건)
+        let page1 = db.actions_paged(1, 2).unwrap();
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page1[0].summary, "메시지 3");
+
+        // 3페이지(1건)
+        let page2 = db.actions_paged(2, 2).unwrap();
+        assert_eq!(page2.len(), 1);
+        assert_eq!(page2[0].summary, "메시지 1");
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_actions_filtered() {
+        let path = temp_db_path();
+        let db = FemtoDb::open(&path).unwrap();
+
+        db.insert_action(&ActionType::UserMessage, "질문", "내용")
+            .unwrap();
+        db.insert_action(&ActionType::FileOperation, "파일 생성", "내용")
+            .unwrap();
+        db.insert_action(&ActionType::UserMessage, "질문2", "내용")
+            .unwrap();
+        db.insert_action(&ActionType::SkillRun, "스킬 실행", "내용")
+            .unwrap();
+
+        // UserMessage만 필터
+        let filtered = db
+            .actions_filtered(&ActionType::UserMessage, 0, 10)
+            .unwrap();
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].summary, "질문2");
+
+        // SkillRun 필터
+        let skills = db.actions_filtered(&ActionType::SkillRun, 0, 10).unwrap();
+        assert_eq!(skills.len(), 1);
+
+        // 카운트
+        assert_eq!(
+            db.action_count_filtered(&ActionType::UserMessage).unwrap(),
+            2
+        );
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_undo_by_id() {
+        let path = temp_db_path();
+        let db = FemtoDb::open(&path).unwrap();
+
+        let id1 = db
+            .insert_action(&ActionType::UserMessage, "첫 번째", "내용1")
+            .unwrap();
+        let _id2 = db
+            .insert_action(&ActionType::AgentResponse, "두 번째", "내용2")
+            .unwrap();
+        let id3 = db
+            .insert_action(&ActionType::FileOperation, "세 번째", "내용3")
+            .unwrap();
+
+        // 가운데(id1) 선택 Undo
+        assert!(db.undo_by_id(id1).unwrap());
+
+        // 페이지네이션으로 확인 — id1은 undone=true
+        let all = db.actions_paged(0, 10).unwrap();
+        assert_eq!(all.len(), 3);
+        let undone_record = all.iter().find(|r| r.id == id1).unwrap();
+        assert!(undone_record.undone);
+
+        // 이미 Undo된 건 재시도하면 false
+        assert!(!db.undo_by_id(id1).unwrap());
+
+        // id3도 Undo
+        assert!(db.undo_by_id(id3).unwrap());
+
+        // active(recent) 조회는 id2만 남음
+        let active = db.recent_actions(10).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].summary, "두 번째");
 
         cleanup(&path);
     }
