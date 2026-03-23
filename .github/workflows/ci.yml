@@ -53,16 +53,19 @@ jobs:
             triple: x86_64-pc-windows-msvc
             artifact: femtoclaw-windows-x64.exe
             ext: .exe
+            use_cross: false
           - label: Linux x64
             os: ubuntu-latest
             triple: x86_64-unknown-linux-gnu
             artifact: femtoclaw-linux-x64
             ext: ""
+            use_cross: false
           - label: Raspberry Pi (ARM64)
             os: ubuntu-latest
             triple: aarch64-unknown-linux-gnu
             artifact: femtoclaw-rpi-aarch64
             ext: ""
+            use_cross: true
     runs-on: ${{ matrix.target.os }}
     steps:
       - uses: actions/checkout@v4
@@ -70,23 +73,20 @@ jobs:
         with:
           targets: ${{ matrix.target.triple }}
 
-      # ARM 크로스컴파일 toolchain (RPi용)
-      - name: ARM 크로스컴파일러 설치
-        if: contains(matrix.target.triple, 'aarch64')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          mkdir -p .cargo
-          echo '[target.aarch64-unknown-linux-gnu]' >> .cargo/config.toml
-          echo 'linker = "aarch64-linux-gnu-gcc"' >> .cargo/config.toml
+      # cross 설치 (RPi Docker 기반 크로스컴파일)
+      - name: cross 설치
+        if: matrix.target.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: 릴리즈 빌드
-        env:
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
+      - name: 릴리즈 빌드 (native)
+        if: "!matrix.target.use_cross"
         run: cargo build --release --target ${{ matrix.target.triple }}
+
+      - name: 릴리즈 빌드 (cross)
+        if: matrix.target.use_cross
+        run: cross build --release --target ${{ matrix.target.triple }}
 
       - name: 바이너리 복사
         shell: bash
