@@ -113,7 +113,7 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
     let password = password.trim();
 
     // config.enc 로드
-    let app_config = config::load_config(password.as_bytes(), &paths.config_enc)?;
+    let mut app_config = config::load_config(password.as_bytes(), &paths.config_enc)?;
 
     // 텔레그램 토큰 확인
     let tg_token = match &app_config.telegram {
@@ -146,6 +146,17 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
         match event_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(core::telegram::BotEvent::Paired(chat_id, username)) => {
                 eprintln!("[✓] 페어링 성공: {} (chat_id: {})", username, chat_id);
+                // [v0.4.0] 페어링 성공 시 chat_id를 config.enc에 영속화
+                if let Some(ref mut tg) = app_config.telegram {
+                    tg.chat_id = Some(chat_id);
+                }
+                if let Err(e) =
+                    config::save_config(&app_config, password.as_bytes(), &paths.config_enc)
+                {
+                    eprintln!("[!] 페어링 chat_id 저장 실패: {}", e);
+                } else {
+                    eprintln!("[✓] chat_id 저장 완료 — 재시작 후에도 페어링 유지");
+                }
             }
             Ok(core::telegram::BotEvent::MessageReceived(msg)) => {
                 eprintln!("[→] 메시지 수신: {}", msg);

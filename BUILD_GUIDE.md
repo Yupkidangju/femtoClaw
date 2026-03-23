@@ -110,12 +110,14 @@ cargo test --lib db
 
 ## 6. 코드 품질 검사
 ```bash
-# Clippy 린트
-cargo clippy -- -D warnings
+# Clippy 린트 (CI와 동일한 기준)
+cargo clippy --all-targets -- -W clippy::all
 
 # 포맷 검사
 cargo fmt --check
 ```
+
+> **참고:** `-W clippy::all`은 경고로 보고합니다. 안정화 후 `-D warnings`로 승격 예정.
 
 ## 7. 트러블슈팅
 
@@ -185,8 +187,8 @@ linker = "aarch64-linux-gnu-gcc"
 
 ### 릴리즈 생성 방법
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 태그 푸시 시 CI가 자동으로 3개 타겟 바이너리를 빌드하고 GitHub Release에 첨부합니다.
 
