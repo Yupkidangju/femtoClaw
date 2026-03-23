@@ -19,14 +19,27 @@
 - `pkg-config`, `libssl-dev` (배포판에 따라 이름 상이)
 - `x86_64-unknown-linux-gnu` 타겟
 
-#### Raspberry Pi (aarch64)
-- `aarch64-unknown-linux-gnu` 크로스 컴파일 타겟
-- 또는 Pi 네이티브 환경에서 직접 빌드
+#### Raspberry Pi (aarch64) — 네이티브 빌드 권장
+`rusqlite`와 `zstd`가 C 소스를 번들 컴파일하므로, **Pi에서 직접 빌드**가 가장 안정적입니다.
 
 ```bash
-# 크로스 컴파일 타겟 추가
-rustup target add aarch64-unknown-linux-gnu
+# 1. Rust 설치 (최초 1회, ~2분)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source $HOME/.cargo/env
+
+# 2. 빌드 도구 설치 (Debian/Raspbian)
+sudo apt update && sudo apt install -y build-essential pkg-config
+
+# 3. 클론 + 릴리즈 빌드 (~3-5분)
+git clone https://github.com/Yupkidangju/femtoClaw.git
+cd femtoClaw
+cargo build --release
+
+# 4. 실행
+./target/release/femtoclaw
 ```
+
+> **참고:** RPi 4 (4GB+) 이상 권장. RPi 3은 RAM 부족으로 빌드 시간이 길어질 수 있습니다.
 
 ## 2. 의존성 크레이트
 
