@@ -44,53 +44,53 @@ impl ToolError {
         match self {
             ToolError::ToolNotFound(name) => {
                 format!(
-                    "'{}'이라는 도구는 존재하지 않습니다. \
-                     사용 가능한 도구: file_read, file_write, file_list, sleep, print",
+                    "Tool '{}' not found. \
+                     Available: file_read, file_write, file_list, sleep, print",
                     name
                 )
             }
             ToolError::MissingParam(param) => {
-                format!("필수 파라미터 '{}'가 누락되었습니다.", param)
+                format!("Required parameter '{}' is missing.", param)
             }
             ToolError::FileNotFound(path) => {
                 format!(
-                    "파일 '{}'을(를) 찾을 수 없습니다. \
-                     경로를 확인해주세요. file_list('.')으로 현재 파일 목록을 확인할 수 있습니다.",
+                    "File '{}' not found. \
+                     Check the path. Use file_list('.') to see current files.",
                     path
                 )
             }
             ToolError::JailBlocked(detail) => JailingGuide::explain_block(detail),
             ToolError::PermissionDenied(path) => {
                 format!(
-                    "파일 '{}'에 대한 접근 권한이 없습니다. \
-                     다른 경로를 시도하거나, 파일 권한을 확인해주세요.",
+                    "Permission denied for '{}'. \
+                     Try a different path or check file permissions.",
                     path
                 )
             }
             ToolError::Timeout(detail) => {
                 format!(
-                    "작업이 시간 제한을 초과했습니다: {}. \
-                     더 작은 작업으로 나눠서 시도해보세요.",
+                    "Operation timed out: {}. \
+                     Try breaking into smaller tasks.",
                     detail
                 )
             }
             ToolError::CommandBlocked(cmd) => {
                 format!(
-                    "보안 정책으로 '{}' 명령어는 사용할 수 없습니다. \
-                     이것은 시스템을 보호하기 위한 안전장치입니다.",
+                    "Command '{}' is blocked by security policy. \
+                     This is a safety measure to protect the system.",
                     cmd
                 )
             }
             ToolError::RetryExhausted(tool_id) => {
                 format!(
-                    "도구 '{}'가 3회 연속 실패했습니다. \
-                     자동 재시도를 중단합니다. \
-                     문제가 지속되면 도움을 요청해주세요.",
+                    "Tool '{}' failed 3 times in a row. \
+                     Automatic retry stopped. \
+                     Please ask for help if the problem persists.",
                     tool_id
                 )
             }
             ToolError::Other(msg) => {
-                format!("도구 실행 중 오류가 발생했습니다: {}", msg)
+                format!("Tool execution error: {}", msg)
             }
         }
     }
@@ -190,7 +190,7 @@ impl ToolExecutor {
                 // (1) ../ 패턴 차단 — 빠른 사전 검사
                 if path_str.contains("..") {
                     let err = ToolError::JailBlocked(format!(
-                        "BLOCKED: 디렉토리 순회(../) 금지 — {}",
+                        "BLOCKED: Directory traversal (../) forbidden — {}",
                         path_str
                     ));
                     self.record_failure(tool_id);
@@ -207,7 +207,7 @@ impl ToolExecutor {
                 let p = std::path::Path::new(path_str);
                 if p.is_absolute() {
                     let err = ToolError::JailBlocked(format!(
-                        "BLOCKED: 경로 탈출 시도 — 절대 경로 '{}' 사용 금지, 상대 경로만 사용하세요",
+                        "BLOCKED: Absolute path '{}' not allowed — use relative paths only",
                         path_str
                     ));
                     self.record_failure(tool_id);
@@ -316,7 +316,7 @@ impl ToolExecutor {
                 let ms: i64 = ms_str.parse().unwrap_or(0);
                 let clamped = ms.clamp(0, 5000) as u64;
                 std::thread::sleep(std::time::Duration::from_millis(clamped));
-                Ok(format!("{}ms 대기 완료", clamped))
+                Ok(format!("Waited {}ms", clamped))
             }
             "print" => {
                 let msg = get_param(params, "msg")?;
@@ -345,7 +345,7 @@ fn read_file_safe(path: &Path) -> Result<String, ToolError> {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
             ToolError::PermissionDenied(path.display().to_string())
         } else {
-            ToolError::Other(format!("파일 읽기 실패: {}", e))
+            ToolError::Other(format!("File read error: {}", e))
         }
     })
 }
@@ -354,16 +354,16 @@ fn write_file_safe(path: &Path, content: &str) -> Result<String, ToolError> {
     // 부모 디렉토리 자동 생성
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| ToolError::Other(format!("디렉토리 생성 실패: {}", e)))?;
+            .map_err(|e| ToolError::Other(format!("Directory creation failed: {}", e)))?;
     }
     std::fs::write(path, content).map_err(|e| {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
             ToolError::PermissionDenied(path.display().to_string())
         } else {
-            ToolError::Other(format!("파일 쓰기 실패: {}", e))
+            ToolError::Other(format!("File write error: {}", e))
         }
     })?;
-    Ok(format!("파일 저장 완료: {}", path.display()))
+    Ok(format!("File saved: {}", path.display()))
 }
 
 fn list_dir_safe(path: &Path) -> Result<String, ToolError> {
@@ -374,7 +374,7 @@ fn list_dir_safe(path: &Path) -> Result<String, ToolError> {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
             ToolError::PermissionDenied(path.display().to_string())
         } else {
-            ToolError::Other(format!("디렉토리 탐색 실패: {}", e))
+            ToolError::Other(format!("Directory listing error: {}", e))
         }
     })?;
 
@@ -419,7 +419,7 @@ mod tests {
         // 파일 쓰기
         let result = exec.execute("file_write", &[("path", "test.txt"), ("content", "hello")]);
         assert!(result.success);
-        assert!(result.output.unwrap().contains("저장 완료"));
+        assert!(result.output.unwrap().contains("File saved"));
 
         // 파일 읽기
         let result = exec.execute("file_read", &[("path", "test.txt")]);
@@ -439,7 +439,7 @@ mod tests {
         assert!(matches!(result.error, Some(ToolError::FileNotFound(_))));
 
         let msg = result.error.unwrap().user_message();
-        assert!(msg.contains("찾을 수 없습니다"));
+        assert!(msg.contains("not found"));
 
         cleanup(&ws);
     }

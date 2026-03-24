@@ -25,9 +25,11 @@ pub enum JailViolation {
 impl std::fmt::Display for JailViolation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JailViolation::PathEscape(p) => write!(f, "BLOCKED: 경로 탈출 시도 — {}", p),
-            JailViolation::BlacklistedCommand(c) => write!(f, "BLOCKED: 금지 명령어 — {}", c),
-            JailViolation::InvalidPath(p) => write!(f, "BLOCKED: 유효하지 않은 경로 — {}", p),
+            JailViolation::PathEscape(p) => write!(f, "BLOCKED: path escape attempt — {}", p),
+            JailViolation::BlacklistedCommand(c) => {
+                write!(f, "BLOCKED: blacklisted command — {}", c)
+            }
+            JailViolation::InvalidPath(p) => write!(f, "BLOCKED: invalid path — {}", p),
         }
     }
 }

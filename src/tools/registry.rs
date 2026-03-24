@@ -19,12 +19,12 @@ pub enum SecurityLevel {
 }
 
 impl SecurityLevel {
-    /// 한국어 표시명
+    /// [v0.5.0] 보안 수준 표시명 (영어 → 다국어 지원 시 msg!() 전환 가능)
     pub fn display(&self) -> &'static str {
         match self {
-            SecurityLevel::Safe => "안전",
-            SecurityLevel::JailRequired => "Jail 검증",
-            SecurityLevel::Restricted => "제한됨",
+            SecurityLevel::Safe => "Safe",
+            SecurityLevel::JailRequired => "Jail Required",
+            SecurityLevel::Restricted => "Restricted",
         }
     }
 }
@@ -69,7 +69,7 @@ const PARAM_PATH: ToolParam = ToolParam {
     name: "path",
     param_type: "string",
     required: true,
-    description: "workspace 내 상대 경로",
+    description: "Relative path within workspace",
     example: "data/report.txt",
 };
 
@@ -77,15 +77,15 @@ const PARAM_CONTENT: ToolParam = ToolParam {
     name: "content",
     param_type: "string",
     required: true,
-    description: "파일에 쓸 내용",
-    example: "분석 결과: 정상",
+    description: "Content to write to the file",
+    example: "Analysis result: OK",
 };
 
 const PARAM_DIR: ToolParam = ToolParam {
     name: "dir",
     param_type: "string",
     required: true,
-    description: "workspace 내 디렉토리 상대 경로",
+    description: "Relative directory path within workspace",
     example: "data",
 };
 
@@ -93,7 +93,7 @@ const PARAM_MS: ToolParam = ToolParam {
     name: "ms",
     param_type: "integer",
     required: true,
-    description: "대기 시간 (밀리초, 최대 5000)",
+    description: "Wait time in milliseconds (max 5000)",
     example: "1000",
 };
 
@@ -101,8 +101,8 @@ const PARAM_MSG: ToolParam = ToolParam {
     name: "msg",
     param_type: "string",
     required: true,
-    description: "출력할 메시지",
-    example: "처리 완료!",
+    description: "Message to output",
+    example: "Done!",
 };
 
 // === 내장 도구 5종 ===
@@ -110,58 +110,57 @@ const PARAM_MSG: ToolParam = ToolParam {
 /// [v0.4.0] 내장 도구 레지스트리
 pub const BUILTIN_TOOLS: &[ToolDef] = &[
     ToolDef {
-        name: "파일 읽기",
+        name: "File Read",
         id: "file_read",
-        description: "workspace 내 파일을 읽어 내용을 반환합니다. 텍스트 파일만 지원합니다.",
+        description: "Reads a file within workspace and returns its content. Text files only.",
         params: &[PARAM_PATH],
-        constraints: "경로는 반드시 workspace/ 내부여야 합니다. \
-                      절대 경로나 ../를 사용한 상위 디렉토리 접근은 차단됩니다.",
-        error_guidance: "파일이 없으면 사용자에게 파일 경로를 확인해달라고 요청하세요. \
-                        권한 문제가 발생하면 다른 경로를 시도하세요.",
+        constraints: "Path must be inside workspace/. \
+                      Absolute paths and ../ traversal are blocked.",
+        error_guidance: "If file not found, ask user to verify the path. \
+                        On permission errors, try a different path.",
         security_level: SecurityLevel::JailRequired,
     },
     ToolDef {
-        name: "파일 쓰기",
+        name: "File Write",
         id: "file_write",
         description:
-            "workspace 내에 파일을 생성하거나 덮어씁니다. 중간 디렉토리는 자동 생성됩니다.",
+            "Creates or overwrites a file within workspace. Intermediate dirs are auto-created.",
         params: &[PARAM_PATH, PARAM_CONTENT],
-        constraints: "경로는 반드시 workspace/ 내부여야 합니다. \
-                      기존 파일은 덮어쓰여지므로, 중요한 파일은 먼저 백업을 제안하세요. \
-                      ../를 포함한 경로는 즉시 차단됩니다.",
-        error_guidance: "쓰기 실패 시 디스크 용량이나 경로 유효성을 확인하세요. \
-                        보안 차단이 발생하면 workspace 내부 경로로 변경하세요.",
+        constraints: "Path must be inside workspace/. \
+                      Existing files are overwritten; suggest backup first. \
+                      Paths containing ../ are blocked immediately.",
+        error_guidance: "On write failure, check disk space or path validity. \
+                        On security block, change to a workspace-internal path.",
         security_level: SecurityLevel::JailRequired,
     },
     ToolDef {
-        name: "디렉토리 목록",
+        name: "Directory List",
         id: "file_list",
-        description: "workspace 내 디렉토리의 파일/폴더 목록을 반환합니다.",
+        description: "Lists files/folders in a workspace directory.",
         params: &[PARAM_DIR],
-        constraints: "경로는 반드시 workspace/ 내부여야 합니다. \
-                      비어있는 디렉토리는 빈 배열을 반환합니다.",
-        error_guidance: "디렉토리가 없으면 사용자에게 경로를 확인해달라고 요청하세요. \
-                        먼저 file_list('.')으로 전체 구조를 파악하는 것이 좋습니다.",
+        constraints: "Path must be inside workspace/. \
+                      Empty directories return an empty array.",
+        error_guidance: "If directory not found, ask user to verify path. \
+                        Try file_list('.') first to see the full structure.",
         security_level: SecurityLevel::JailRequired,
     },
     ToolDef {
-        name: "대기",
+        name: "Sleep",
         id: "sleep",
-        description: "지정한 시간(밀리초) 동안 실행을 멈춥니다. 최대 5000ms(5초)까지 허용됩니다.",
+        description: "Pauses execution for the specified milliseconds. Max 5000ms (5 seconds).",
         params: &[PARAM_MS],
-        constraints: "0~5000ms 범위로 자동 클램핑됩니다. \
-                      긴 대기가 필요하면 여러 번 나눠서 호출하세요.",
-        error_guidance:
-            "이 도구는 실패하지 않습니다. 5000ms를 초과하면 자동으로 5000ms로 제한됩니다.",
+        constraints: "Auto-clamped to 0~5000ms range. \
+                      For longer waits, call multiple times.",
+        error_guidance: "This tool never fails. Values over 5000ms are clamped to 5000ms.",
         security_level: SecurityLevel::Safe,
     },
     ToolDef {
-        name: "로그 출력",
+        name: "Print",
         id: "print",
-        description: "메시지를 출력 버퍼에 기록합니다. 스크립트 실행 결과에 포함됩니다.",
+        description: "Writes a message to the output buffer. Included in script results.",
         params: &[PARAM_MSG],
-        constraints: "출력은 버퍼에 누적되며, 스크립트 종료 후 결과에 포함됩니다.",
-        error_guidance: "이 도구는 실패하지 않습니다.",
+        constraints: "Output accumulates in buffer and is included in script result.",
+        error_guidance: "This tool never fails.",
         security_level: SecurityLevel::Safe,
     },
 ];
@@ -183,7 +182,7 @@ mod tests {
     #[test]
     fn test_find_tool() {
         let tool = find_tool("file_read").unwrap();
-        assert_eq!(tool.name, "파일 읽기");
+        assert_eq!(tool.name, "File Read");
         assert_eq!(tool.security_level, SecurityLevel::JailRequired);
         assert!(!tool.params.is_empty());
 
