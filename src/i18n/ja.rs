@@ -103,12 +103,15 @@ pub fn get(key: &str) -> Option<&'static str> {
         "bot.help" => "📋 コマンド:\n/pair <PIN> — ペアリング\n/status — 状態\n/agent <N> — 切替",
 
         // === DB ===
-        "db.type.user_msg" => "ユーザーメッセージ",
-        "db.type.agent_resp" => "エージェント応答",
-        "db.type.file_op" => "ファイル操作",
+        "db.type.user_msg" => "会話",
+        "db.type.agent_resp" => "応答",
+        "db.type.file_op" => "ファイル",
+        "db.type.api_call" => "API",
+        "db.type.system_event" => "システム",
+        "db.type.skill_run" => "スキル",
         "db.type.config_change" => "設定変更",
-        "db.type.tool_call" => "ツール呼出",
-        "db.type.security_event" => "セキュリティイベント",
+        "db.type.tool_call" => "ツール",
+        "db.type.security_event" => "セキュリティ",
 
         // === 検証 ===
         "val.timeout" => "タイムアウト (5秒)",

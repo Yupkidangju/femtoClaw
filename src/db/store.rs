@@ -64,17 +64,17 @@ impl ActionType {
         }
     }
 
-    /// [v0.2.0] 한국어 표시명
-    pub fn display_name(&self) -> &'static str {
+    /// [v0.7.0] 다국어 표시명 (msg!() 매크로 기반 i18n)
+    pub fn display_name(&self) -> String {
         match self {
-            ActionType::UserMessage => "대화",
-            ActionType::AgentResponse => "응답",
-            ActionType::FileOperation => "파일",
-            ActionType::ApiCall => "API",
-            ActionType::SystemEvent => "시스템",
-            ActionType::SkillRun => "스킬",
-            ActionType::ToolCall => "도구",
-            ActionType::SecurityEvent => "보안",
+            ActionType::UserMessage => crate::msg!("db.type.user_msg").to_string(),
+            ActionType::AgentResponse => crate::msg!("db.type.agent_resp").to_string(),
+            ActionType::FileOperation => crate::msg!("db.type.file_op").to_string(),
+            ActionType::ApiCall => crate::msg!("db.type.api_call").to_string(),
+            ActionType::SystemEvent => crate::msg!("db.type.system_event").to_string(),
+            ActionType::SkillRun => crate::msg!("db.type.skill_run").to_string(),
+            ActionType::ToolCall => crate::msg!("db.type.tool_call").to_string(),
+            ActionType::SecurityEvent => crate::msg!("db.type.security_event").to_string(),
         }
     }
 }

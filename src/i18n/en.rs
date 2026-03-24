@@ -103,9 +103,12 @@ pub fn get(key: &str) -> Option<&'static str> {
         "bot.help" => "📋 Commands:\n/pair <PIN> — Pair\n/status — Status\n/agent <N> — Switch",
 
         // === DB ===
-        "db.type.user_msg" => "User Message",
-        "db.type.agent_resp" => "Agent Response",
-        "db.type.file_op" => "File Operation",
+        "db.type.user_msg" => "Chat",
+        "db.type.agent_resp" => "Response",
+        "db.type.file_op" => "File",
+        "db.type.api_call" => "API",
+        "db.type.system_event" => "System",
+        "db.type.skill_run" => "Skill",
         "db.type.config_change" => "Config Change",
         "db.type.tool_call" => "Tool Call",
         "db.type.security_event" => "Security Event",

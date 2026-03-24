@@ -103,9 +103,12 @@ pub fn get(key: &str) -> Option<&'static str> {
         "bot.help" => "📋 명령어:\n/pair <PIN> — 페어링\n/status — 상태\n/agent <N> — 전환",
 
         // === DB ===
-        "db.type.user_msg" => "사용자 메시지",
-        "db.type.agent_resp" => "에이전트 응답",
-        "db.type.file_op" => "파일 작업",
+        "db.type.user_msg" => "대화",
+        "db.type.agent_resp" => "응답",
+        "db.type.file_op" => "파일",
+        "db.type.api_call" => "API",
+        "db.type.system_event" => "시스템",
+        "db.type.skill_run" => "스킬",
         "db.type.config_change" => "설정 변경",
         "db.type.tool_call" => "도구 호출",
         "db.type.security_event" => "보안 이벤트",
