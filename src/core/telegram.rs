@@ -375,22 +375,13 @@ async fn handle_message(
                         s.paired_username = Some(username.clone());
                     }
 
-                    bot.send_message(
-                        chat_id,
-                        format!(
-                            "✅ *femtoClaw paired\\!*\n\n\
-                        Device connected\\.\n\
-                        Send a message and the agent will respond\\.\n\n\
-                        `/help` — Command list"
-                        ),
-                    )
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .await
-                    .ok();
+                    bot.send_message(chat_id, crate::msg!("bot.pair_success"))
+                        .await
+                        .ok();
 
                     let _ = event_tx.send(BotEvent::Paired(chat_id.0, username));
                 } else {
-                    bot.send_message(chat_id, "❌ Incorrect PIN. Check the PIN shown on TUI.")
+                    bot.send_message(chat_id, crate::msg!("bot.pair_fail"))
                         .await
                         .ok();
                 }
@@ -398,12 +389,9 @@ async fn handle_message(
                 bot.send_message(chat_id, "Usage: /pair 123456").await.ok();
             }
         } else {
-            bot.send_message(
-                chat_id,
-                "🔒 Pairing required.\nSend /pair [PIN] to connect.",
-            )
-            .await
-            .ok();
+            bot.send_message(chat_id, crate::msg!("bot.pair_prompt"))
+                .await
+                .ok();
         }
     } else {
         // 페어링 완료 상태: 메시지를 에이전트로 전달
@@ -424,18 +412,9 @@ async fn handle_message(
             // 명령어 처리
             match text.as_str() {
                 "/help" => {
-                    bot.send_message(
-                        chat_id,
-                        "📋 femtoClaw commands:\n\n\
-                        /help — This help\n\
-                        /status — Agent status\n\
-                        /undo — Undo last action\n\
-                        /agents — Agent list\n\
-                        /agent N — Switch agent\n\n\
-                        Other messages are forwarded to the agent.",
-                    )
-                    .await
-                    .ok();
+                    bot.send_message(chat_id, crate::msg!("bot.help"))
+                        .await
+                        .ok();
                 }
                 "/status" => {
                     let agent_id = {

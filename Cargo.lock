@@ -753,6 +753,7 @@ dependencies = [
  "tiktoken-rs",
  "tokio",
  "toml",
+ "unicode-width",
  "zstd",
 ]
 

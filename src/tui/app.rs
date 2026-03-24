@@ -1499,14 +1499,34 @@ fn center_rect(area: Rect, width: u16, height: u16) -> Rect {
     Rect::new(x, y, width.min(area.width), height.min(area.height))
 }
 
-/// [v0.1.0] 입력 텍스트가 표시 영역을 초과할 경우 끝부분만 보이도록 자른다.
-/// max_width: 보여줄 최대 문자 수. 초과 시 앞에 "…"를 붙여 tail 표시.
+/// [v0.7.0] CJK 보정된 입력 텍스트 자르기
+/// unicode-width로 표시 너비를 정확히 계산하여 CJK 문자(2칸)도 올바르게 처리.
+/// max_width: 보여줄 최대 칸 수(터미널 열). 초과 시 앞에 "…"를 붙여 tail 표시.
 fn truncate_for_display(text: &str, max_width: usize) -> String {
-    if text.len() <= max_width {
-        text.to_string()
-    } else {
-        // 끝에서 (max_width - 1)글자만 보여주고 앞에 … 표시
-        let start = text.len() - (max_width.saturating_sub(1));
-        format!("…{}", &text[start..])
+    use unicode_width::UnicodeWidthStr;
+
+    let text_width = UnicodeWidthStr::width(text);
+    if text_width <= max_width {
+        return text.to_string();
     }
+
+    // 끝에서부터 max_width - 1 칸까지 문자를 수집 ("…" 1칸 예약)
+    let target = max_width.saturating_sub(1);
+    let mut result = String::new();
+    let mut collected_width = 0;
+
+    // 뒤에서부터 수집
+    let chars: Vec<char> = text.chars().collect();
+    for &ch in chars.iter().rev() {
+        let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if collected_width + w > target {
+            break;
+        }
+        collected_width += w;
+        result.push(ch);
+    }
+
+    // 역순 수집이므로 다시 뒤집기
+    let tail: String = result.chars().rev().collect();
+    format!("…{}", tail)
 }

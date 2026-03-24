@@ -168,7 +168,12 @@ pub struct ChatSession {
     workspace: PathBuf,
     /// OpenAI tools 파라미터 (사전 빌드)
     tool_definitions: Vec<super::agent::ToolDefinition>,
+    /// [v0.7.0] 세션 트랜스크립트 파일 경로
+    session_path: PathBuf,
 }
+
+/// [v0.7.0] MEMORY.md 최대 라인 수 (FIFO 정리 기준)
+const MEMORY_MAX_LINES: usize = 100;
 
 impl ChatSession {
     /// [v0.6.0] 새 채팅 세션 생성
@@ -184,6 +189,18 @@ impl ChatSession {
         let executor = ToolExecutor::new(workspace.to_path_buf());
         let tool_definitions = tool_protocol::build_tool_definitions();
 
+        // [v0.7.0] 세션 트랜스크립트 파일 초기화
+        let sessions_dir = workspace.join("sessions");
+        let _ = std::fs::create_dir_all(&sessions_dir);
+        let session_name = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let session_path = sessions_dir.join(format!("{}.md", session_name));
+        let header = format!(
+            "# Session Transcript — {}\n\n> Model: {}\n\n",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            llm_config.model,
+        );
+        let _ = std::fs::write(&session_path, header);
+
         Self {
             agent_config,
             context,
@@ -191,6 +208,7 @@ impl ChatSession {
             executor,
             workspace: workspace.to_path_buf(),
             tool_definitions,
+            session_path,
         }
     }
 
@@ -221,6 +239,12 @@ impl ChatSession {
 
         // 4. 일일 로그에 기록
         self.append_daily_log(user_message, &reply_text);
+
+        // 5. [v0.7.0] MEMORY.md 큐레이션
+        self.curate_memory(user_message);
+
+        // 6. [v0.7.0] 세션 트랜스크립트에 추가
+        self.append_session_transcript(user_message, &reply_text);
 
         reply_text
     }
@@ -312,6 +336,62 @@ impl ChatSession {
         // append
         use std::io::Write;
         if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&log_path) {
+            let _ = file.write_all(entry.as_bytes());
+        }
+    }
+
+    /// [v0.7.0] MEMORY.md 자동 큐레이션
+    /// 매 대화 후 메모리 파일에 요약 라인을 추가한다.
+    /// 100줄 초과 시 오래된 항목을 자동 제거 (FIFO).
+    fn curate_memory(&self, user_msg: &str) {
+        let memory_path = self.workspace.join("MEMORY.md");
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+        let summary: String = user_msg.chars().take(50).collect();
+        let entry = format!("- [{}] {}", timestamp, summary);
+
+        // 기존 내용 읽기
+        let mut lines: Vec<String> = if memory_path.exists() {
+            std::fs::read_to_string(&memory_path)
+                .unwrap_or_default()
+                .lines()
+                .map(|l| l.to_string())
+                .collect()
+        } else {
+            vec!["# MEMORY.md — 대화 요약 기록".to_string(), String::new()]
+        };
+
+        // 새 항목 추가
+        lines.push(entry);
+
+        // FIFO: 헤더(2줄) + 데이터. 데이터만 MEMORY_MAX_LINES으로 제한
+        let header_count = lines.iter().take_while(|l| !l.starts_with("- [")).count();
+        let data_lines: Vec<String> = lines[header_count..].to_vec();
+        if data_lines.len() > MEMORY_MAX_LINES {
+            let trim = data_lines.len() - MEMORY_MAX_LINES;
+            let trimmed: Vec<String> = lines[..header_count]
+                .iter()
+                .chain(data_lines[trim..].iter())
+                .cloned()
+                .collect();
+            let _ = std::fs::write(&memory_path, trimmed.join("\n") + "\n");
+        } else {
+            let _ = std::fs::write(&memory_path, lines.join("\n") + "\n");
+        }
+    }
+
+    /// [v0.7.0] 세션 트랜스크립트에 대화 내용 추가
+    fn append_session_transcript(&self, user_msg: &str, assistant_msg: &str) {
+        let time = chrono::Local::now().format("%H:%M:%S").to_string();
+        let entry = format!(
+            "---\n\n**[{}] User:**\n{}\n\n**Agent:**\n{}\n\n",
+            time, user_msg, assistant_msg
+        );
+
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&self.session_path)
+        {
             let _ = file.write_all(entry.as_bytes());
         }
     }
