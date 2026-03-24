@@ -191,7 +191,7 @@ impl App {
             async_tx: tx,
             async_rx: rx,
             app_config: AppConfig::default(),
-            feed_lines: vec![format!("[{}] femtoClaw v0.1.0-beta 시작", timestamp())],
+            feed_lines: vec![format!("[{}] {}", timestamp(), msg!("boot.init_msg"))],
         }
     }
 
@@ -226,7 +226,7 @@ impl App {
         // 비동기 검증 결과 수신
         while let Ok(result) = self.async_rx.try_recv() {
             match result {
-                AsyncResult::LlmValidation(Ok((msg, models))) => {
+                AsyncResult::LlmValidation(Ok((m, models))) => {
                     self.llm_status = ValidationStatus::Ok;
                     // 모델 목록 반영
                     if !models.is_empty() {
@@ -234,31 +234,42 @@ impl App {
                         self.model_index = 0;
                         self.model = self.available_models[0].clone();
                         self.feed_lines.push(format!(
-                            "[{}] LLM 검증 성공: {} — {}개 모델 발견",
+                            "[{}] {}",
                             timestamp(),
-                            msg,
-                            self.available_models.len()
+                            msg!("feed.llm_verify_ok", m, self.available_models.len())
                         ));
                     } else {
-                        self.feed_lines
-                            .push(format!("[{}] LLM 검증 성공: {}", timestamp(), msg));
+                        self.feed_lines.push(format!(
+                            "[{}] {}",
+                            timestamp(),
+                            msg!("feed.llm_verify_ok_simple", m)
+                        ));
                     }
                 }
                 AsyncResult::LlmValidation(Err(e)) => {
                     self.llm_status = ValidationStatus::Failed(e.clone());
                     self.available_models.clear();
-                    self.feed_lines
-                        .push(format!("[{}] LLM 검증 실패: {}", timestamp(), e));
+                    self.feed_lines.push(format!(
+                        "[{}] {}",
+                        timestamp(),
+                        msg!("feed.llm_verify_fail", e)
+                    ));
                 }
-                AsyncResult::TelegramValidation(Ok(msg)) => {
+                AsyncResult::TelegramValidation(Ok(m)) => {
                     self.tg_status = ValidationStatus::Ok;
-                    self.feed_lines
-                        .push(format!("[{}] Telegram 검증 성공: {}", timestamp(), msg));
+                    self.feed_lines.push(format!(
+                        "[{}] {}",
+                        timestamp(),
+                        msg!("feed.tg_verify_ok", m)
+                    ));
                 }
                 AsyncResult::TelegramValidation(Err(e)) => {
                     self.tg_status = ValidationStatus::Failed(e.clone());
-                    self.feed_lines
-                        .push(format!("[{}] Telegram 검증 실패: {}", timestamp(), e));
+                    self.feed_lines.push(format!(
+                        "[{}] {}",
+                        timestamp(),
+                        msg!("feed.tg_verify_fail", e)
+                    ));
                 }
             }
         }
@@ -367,15 +378,18 @@ impl App {
             KeyCode::Char('1') => {
                 // [v0.2.0] 에이전트 상태 표시
                 self.feed_lines
-                    .push(format!("[{}] ━━ Agent Status ━━", timestamp()));
-                self.feed_lines
-                    .push(format!("  에이전트: {}", self.app_config.agent_name));
+                    .push(format!("[{}] {}", timestamp(), msg!("dash.agent_status")));
+                self.feed_lines.push(format!(
+                    "  {}",
+                    msg!("dash.agent_name", self.app_config.agent_name)
+                ));
                 if let Some(ref llm) = self.app_config.llm_provider {
-                    self.feed_lines
-                        .push(format!("  모델: {} ({:?})", llm.model, llm.preset));
+                    self.feed_lines.push(format!(
+                        "  {}",
+                        msg!("dash.model", llm.model, format!("{:?}", llm.preset))
+                    ));
                 }
-                self.feed_lines
-                    .push(format!("  보안: Jailing=ON | ChaCha20=ON"));
+                self.feed_lines.push(format!("  {}", msg!("dash.security")));
             }
             KeyCode::Char('2') => {
                 if let Some(ref llm) = self.app_config.llm_provider {
@@ -388,13 +402,13 @@ impl App {
                     ));
                 } else {
                     self.feed_lines
-                        .push(format!("[{}] LLM 미설정", timestamp()));
+                        .push(format!("[{}] {}", timestamp(), msg!("dash.llm_none")));
                 }
             }
             KeyCode::Char('3') => {
                 // [v0.2.0] 스킬 목록 표시 (TOML + Rhai 하이브리드)
                 self.feed_lines
-                    .push(format!("[{}] ━━ Skill List (TOML + Rhai) ━━", timestamp()));
+                    .push(format!("[{}] {}", timestamp(), msg!("dash.skill_header")));
                 // skills/core/ 로드
                 let core_dir = self.paths.skills_core.clone();
                 let user_dir = self.paths.skills_user.clone();
@@ -405,11 +419,15 @@ impl App {
                                 crate::skills::SkillType::Static => "TOML",
                                 crate::skills::SkillType::Dynamic => "Rhai",
                             };
-                            self.feed_lines
-                                .push(format!("  [내장][{}] {} — {}", tag, s.name, s.description));
+                            self.feed_lines.push(format!(
+                                "  {}",
+                                msg!("dash.skill_builtin", tag, s.name, s.description)
+                            ));
                         }
                     }
-                    Err(e) => self.feed_lines.push(format!("  core 로드 실패: {}", e)),
+                    Err(e) => self
+                        .feed_lines
+                        .push(format!("  {}", msg!("dash.skill_core_fail", e))),
                 }
                 match crate::skills::load_skills_from_dir(&user_dir, false) {
                     Ok(user_skills) => {
@@ -419,21 +437,32 @@ impl App {
                                 crate::skills::SkillType::Dynamic => "Rhai",
                             };
                             self.feed_lines.push(format!(
-                                "  [사용자][{}] {} — {}",
-                                tag, s.name, s.description
+                                "  {}",
+                                msg!("dash.skill_user", tag, s.name, s.description)
                             ));
                         }
                     }
-                    Err(e) => self.feed_lines.push(format!("  user 로드 실패: {}", e)),
+                    Err(e) => self
+                        .feed_lines
+                        .push(format!("  {}", msg!("dash.skill_user_fail", e))),
                 }
             }
             KeyCode::Char('4') => {
                 // [v0.2.0] 타임머신 — DB에서 최근 10건 조회
-                self.feed_lines
-                    .push(format!("[{}] ━━ Time Machine (최근 10건) ━━", timestamp()));
+                self.feed_lines.push(format!(
+                    "[{}] {}",
+                    timestamp(),
+                    msg!("dash.timemachine_header")
+                ));
+                let cols = msg!("dash.timemachine_cols");
+                let col_parts: Vec<&str> = cols.split('|').collect();
                 self.feed_lines.push(format!(
                     "  {:>4} | {:>6} | {:>6} | {:<30} | {}",
-                    "#", "유형", "상태", "요약", "시각"
+                    "#",
+                    col_parts.first().unwrap_or(&"Type"),
+                    col_parts.get(1).unwrap_or(&"Status"),
+                    col_parts.get(2).unwrap_or(&"Summary"),
+                    col_parts.get(3).unwrap_or(&"Time")
                 ));
                 self.feed_lines.push(format!("  {}", "─".repeat(70)));
                 let db_path = self.paths.db_dir.join("femto_state.db");
@@ -441,10 +470,11 @@ impl App {
                     Ok(db) => match db.actions_paged(0, 10) {
                         Ok(records) => {
                             if records.is_empty() {
-                                self.feed_lines.push("  (기록 없음)".to_string());
+                                self.feed_lines
+                                    .push(format!("  {}", msg!("dash.no_records")));
                             }
                             for r in &records {
-                                let status = if r.undone { "↩ Undo" } else { "✅ 완료" };
+                                let status = if r.undone { "↩ Undo" } else { "✅" };
                                 let summary_trunc = if r.summary.len() > 28 {
                                     format!("{}...", &r.summary[..28])
                                 } else {
@@ -461,26 +491,33 @@ impl App {
                             }
                             match db.action_count() {
                                 Ok(count) => {
-                                    self.feed_lines.push(format!("  ── 전체 {} 건 ──", count));
+                                    self.feed_lines
+                                        .push(format!("  {}", msg!("dash.total_count", count)));
                                 }
                                 Err(_) => {}
                             }
                         }
                         Err(e) => {
-                            self.feed_lines.push(format!("  DB 조회 실패: {}", e));
+                            self.feed_lines
+                                .push(format!("  {}", msg!("dash.db_query_fail", e)));
                         }
                     },
                     Err(e) => {
-                        self.feed_lines.push(format!("  DB 열기 실패: {}", e));
+                        self.feed_lines
+                            .push(format!("  {}", msg!("dash.db_open_fail", e)));
                     }
                 }
             }
             KeyCode::Char('5') => {
                 // [v0.3.0] 에이전트 전환
-                self.feed_lines
-                    .push(format!("[{}] ━━ Agent Switch ━━", timestamp()));
+                self.feed_lines.push(format!(
+                    "[{}] {}",
+                    timestamp(),
+                    msg!("dash.agent_switch_header")
+                ));
                 if self.app_config.agents.is_empty() {
-                    self.feed_lines.push("  (등록된 에이전트 없음)".to_string());
+                    self.feed_lines
+                        .push(format!("  {}", msg!("dash.no_agents")));
                 } else {
                     for a in &self.app_config.agents {
                         let marker = if a.id == self.app_config.active_agent_id {
@@ -488,7 +525,11 @@ impl App {
                         } else {
                             " "
                         };
-                        let status = if a.active { "활성" } else { "비활성" };
+                        let status = if a.active {
+                            msg!("dash.active")
+                        } else {
+                            msg!("dash.inactive")
+                        };
                         self.feed_lines.push(format!(
                             "  {} Agent #{}: {} ({})",
                             marker, a.id, a.name, status
@@ -515,12 +556,14 @@ impl App {
                             .unwrap_or_default();
                         if !agent_name.is_empty() {
                             self.app_config.agent_name = agent_name.clone();
-                            self.feed_lines
-                                .push(format!("  → 에이전트 #{}({})로 전환!", next, agent_name));
+                            self.feed_lines.push(format!(
+                                "  {}",
+                                msg!("dash.agent_switched", next, agent_name)
+                            ));
                         }
                     } else {
                         self.feed_lines
-                            .push("  (전환 가능한 다른 에이전트 없음)".to_string());
+                            .push(format!("  {}", msg!("dash.no_switch")));
                     }
                 }
             }
@@ -531,14 +574,17 @@ impl App {
                 match self.app_config.add_agent(next_name) {
                     Ok(id) => {
                         self.feed_lines.push(format!(
-                            "[{}] ✅ 에이전트 #{} ({}) 추가 완료",
+                            "[{}] {}",
                             timestamp(),
-                            id,
-                            next_name
+                            msg!("dash.agent_added", id, next_name)
                         ));
                     }
                     Err(e) => {
-                        self.feed_lines.push(format!("[{}] ❌ {}", timestamp(), e));
+                        self.feed_lines.push(format!(
+                            "[{}] {}",
+                            timestamp(),
+                            msg!("dash.agent_add_fail", e)
+                        ));
                     }
                 }
             }
@@ -552,15 +598,15 @@ impl App {
         if self.is_first_run {
             // 최초 실행: 두 필드 일치 검증
             if self.password.is_empty() {
-                self.pw_error = Some("비밀번호를 입력하세요".to_string());
+                self.pw_error = Some(msg!("pw.empty").to_string());
                 return;
             }
             if self.password.len() < 4 {
-                self.pw_error = Some("최소 4자 이상 입력하세요".to_string());
+                self.pw_error = Some(msg!("pw.too_short").to_string());
                 return;
             }
             if self.password != self.password_confirm {
-                self.pw_error = Some("비밀번호가 일치하지 않습니다".to_string());
+                self.pw_error = Some(msg!("pw.mismatch").to_string());
                 return;
             }
             // 기본 설정으로 config.enc 생성
@@ -571,11 +617,11 @@ impl App {
             ) {
                 Ok(_) => {
                     self.feed_lines
-                        .push(format!("[{}] 마스터 키 생성 완료", timestamp()));
+                        .push(format!("[{}] {}", timestamp(), msg!("pw.key_generated")));
                     self.screen = Screen::Onboard;
                 }
                 Err(e) => {
-                    self.pw_error = Some(format!("설정 저장 실패: {}", e));
+                    self.pw_error = Some(msg!("pw.save_fail", e));
                 }
             }
         } else {
@@ -584,15 +630,15 @@ impl App {
                 Ok(cfg) => {
                     self.app_config = cfg;
                     self.feed_lines
-                        .push(format!("[{}] 설정 복호화 성공", timestamp()));
+                        .push(format!("[{}] {}", timestamp(), msg!("pw.decrypt_ok")));
                     self.screen = Screen::Dashboard;
                 }
                 Err(_) => {
                     self.pw_attempts += 1;
                     if self.pw_attempts >= 3 {
-                        self.pw_error = Some("3회 실패. [R]을 눌러 설정을 리셋하세요".to_string());
+                        self.pw_error = Some(msg!("pw.3fail_reset").to_string());
                     } else {
-                        self.pw_error = Some(format!("비밀번호 오류 ({}/3)", self.pw_attempts));
+                        self.pw_error = Some(msg!("pw.wrong_pw", self.pw_attempts));
                     }
                     self.password.clear();
                 }
@@ -707,14 +753,14 @@ impl App {
         ) {
             Ok(_) => {
                 self.feed_lines
-                    .push(format!("[{}] 설정 저장 완료 → 대시보드", timestamp()));
+                    .push(format!("[{}] {}", timestamp(), msg!("onboard.save_ok")));
                 self.screen = Screen::Dashboard;
             }
             Err(e) => {
                 self.feed_lines.push(format!(
-                    "[{}] ❌ 설정 저장 실패: {} — 디스크 용량/권한을 확인하세요",
+                    "[{}] {}",
                     timestamp(),
-                    e
+                    msg!("onboard.save_fail", e)
                 ));
             }
         }
@@ -914,11 +960,15 @@ impl App {
         };
 
         let status_line = match &self.llm_status {
-            ValidationStatus::None => {
-                Line::from(Span::styled("  Status: [—] 검증 대기", theme::muted()))
-            }
+            ValidationStatus::None => Line::from(Span::styled(
+                format!("  Status: [—] {}", msg!("onboard.llm_status_wait")),
+                theme::muted(),
+            )),
             ValidationStatus::Testing => Line::from(Span::styled(
-                "  Status: [⚙ TESTING...] 검증 중 (최대 5초)",
+                format!(
+                    "  Status: [⚙ TESTING...] {}",
+                    msg!("onboard.llm_status_testing")
+                ),
                 theme::testing(),
             )),
             ValidationStatus::Ok => Line::from(Span::styled(
@@ -926,7 +976,11 @@ impl App {
                 theme::success(),
             )),
             ValidationStatus::Failed(e) => Line::from(Span::styled(
-                format!("  Status: [✗ FAIL] {} — [V]로 재시도", e),
+                format!(
+                    "  Status: [✗ FAIL] {} — {}",
+                    e,
+                    msg!("onboard.llm_status_fail_retry")
+                ),
                 theme::error(),
             )),
         };
@@ -987,19 +1041,26 @@ impl App {
 
         let status_line = match &self.tg_status {
             ValidationStatus::None => Line::from(Span::styled(
-                "  Status: [—] 검증 대기 (선택사항)",
+                format!("  Status: [—] {}", msg!("onboard.tg_status_wait")),
                 theme::muted(),
             )),
             ValidationStatus::Testing => Line::from(Span::styled(
-                "  Status: [⚙ TESTING...] 검증 중 (최대 5초)",
+                format!(
+                    "  Status: [⚙ TESTING...] {}",
+                    msg!("onboard.tg_status_testing")
+                ),
                 theme::testing(),
             )),
             ValidationStatus::Ok => Line::from(Span::styled(
-                "  Status: [✓ OK] Telegram Bot 확인됨",
+                format!("  Status: [✓ OK] {}", msg!("onboard.tg_status_ok")),
                 theme::success(),
             )),
             ValidationStatus::Failed(e) => Line::from(Span::styled(
-                format!("  Status: [✗ FAIL] {} — [V]로 재시도", e),
+                format!(
+                    "  Status: [✗ FAIL] {} — {}",
+                    e,
+                    msg!("onboard.tg_status_fail_retry")
+                ),
                 theme::error(),
             )),
         };
@@ -1125,7 +1186,7 @@ fn validate_llm_api(
         .connect_timeout(std::time::Duration::from_secs(3))
         .timeout(std::time::Duration::from_secs(5))
         .build()
-        .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))?;
+        .map_err(|e| format!("{}", msg!("err.http_client", e)))?;
 
     let response = match preset {
         LlmPreset::Ollama | LlmPreset::LmStudio => {
@@ -1151,9 +1212,9 @@ fn validate_llm_api(
         Ok(resp) => Err(format!("HTTP {}", resp.status())),
         Err(e) => {
             if e.is_timeout() {
-                Err("타임아웃 (5초)".to_string())
+                Err(msg!("val.timeout").to_string())
             } else if e.is_connect() {
-                Err("연결 실패 — 서버가 실행 중인지 확인하세요".to_string())
+                Err(msg!("val.connect_fail").to_string())
             } else {
                 Err(format!("{}", e))
             }
@@ -1206,10 +1267,11 @@ fn validate_telegram(token: &str) -> Result<String, String> {
 
     let url = format!("https://api.telegram.org/bot{}/getMe", token);
     match client.get(&url).send() {
-        Ok(resp) if resp.status().is_success() => Ok("봇 확인됨".to_string()),
+        Ok(resp) if resp.status().is_success() => Ok(msg!("val.bot_confirmed").to_string()),
         Ok(resp) => Err(format!(
-            "HTTP {} — 토큰이 올바른지 확인하세요",
-            resp.status()
+            "HTTP {} — {}",
+            resp.status(),
+            msg!("val.check_token")
         )),
         Err(e) => Err(format!("{}", e)),
     }

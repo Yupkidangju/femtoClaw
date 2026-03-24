@@ -14,6 +14,7 @@ mod config;
 mod core;
 mod db;
 mod error;
+#[macro_use]
 mod i18n;
 mod sandbox;
 mod security;
@@ -62,11 +63,11 @@ fn setup_shutdown_handler() -> Arc<AtomicBool> {
 
     // Ctrl+C (SIGINT/SIGTERM) 핸들러
     ctrlc::set_handler(move || {
-        eprintln!("\n[femtoClaw] 종료 신호 수신 — Graceful Shutdown 진행 중...");
+        eprintln!("\n[femtoClaw] {} ...", msg!("cli.graceful_shutdown"));
         flag.store(true, Ordering::SeqCst);
     })
     .unwrap_or_else(|e| {
-        eprintln!("[경고] Ctrl+C 핸들러 등록 실패: {}", e);
+        eprintln!("[!] Ctrl+C handler failed: {}", e);
     });
 
     shutdown
@@ -113,18 +114,18 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
 
     // config.enc 존재 여부 확인
     if !config::config_exists(&paths.config_enc) {
-        eprintln!("[오류] config.enc가 없습니다. 먼저 TUI 모드로 실행하여 설정을 완료하세요.");
-        eprintln!("       $ femtoclaw  (TUI 모드)");
+        eprintln!("[!] {}", msg!("cli.no_config"));
+        eprintln!("    $ femtoclaw  (TUI)");
         return Ok(());
     }
 
     // 비밀번호 입력 (터미널에서)
-    eprintln!("[*] 마스터 비밀번호를 입력하세요:");
+    eprint!("[*] {}", msg!("cli.enter_pw"));
     let mut password = String::new();
     std::io::stdin().read_line(&mut password).map_err(|e| {
         crate::error::FemtoError::ConfigIo(std::io::Error::new(
             std::io::ErrorKind::Other,
-            format!("입력 실패: {}", e),
+            format!("stdin: {}", e),
         ))
     })?;
     let password = password.trim();
@@ -136,12 +137,12 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
     let tg_token = match &app_config.telegram {
         Some(tg) if tg.verified => tg.bot_token.clone(),
         _ => {
-            eprintln!("[오류] 텔레그램 설정이 없거나 미검증 상태입니다.");
+            eprintln!("[!] {}", msg!("cli.no_telegram"));
             return Ok(());
         }
     };
 
-    eprintln!("[*] 텔레그램 봇 시작 중...");
+    eprintln!("[*] Telegram bot starting...");
 
     // [v0.4.0] 이전 페어링 chat_id 복원
     let saved_chat_id = app_config.telegram.as_ref().and_then(|tg| tg.chat_id);
@@ -149,41 +150,41 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
     let bot_shutdown = shutdown_flag.clone();
     let (event_rx, _cmd_tx, pin) = core::telegram::spawn_bot(tg_token, bot_shutdown, saved_chat_id);
 
-    eprintln!("[✓] 봇 활성 — 페어링 PIN: {}", pin);
-    eprintln!("[*] Ctrl+C로 종료합니다.");
+    eprintln!("[✓] Bot active — PIN: {}", pin);
+    eprintln!("[*] Ctrl+C to quit.");
 
     // 이벤트 루프: 종료 신호까지 대기하면서 봇 이벤트 처리
     loop {
         if shutdown_flag.load(Ordering::Relaxed) {
-            eprintln!("[*] Graceful Shutdown 완료.");
+            eprintln!("[*] {}", msg!("cli.graceful_shutdown"));
             break;
         }
 
         // 봇 이벤트 수신 (100ms 타임아웃)
         match event_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(core::telegram::BotEvent::Paired(chat_id, username)) => {
-                eprintln!("[✓] 페어링 성공: {} (chat_id: {})", username, chat_id);
-                // [v0.4.0] 페어링 성공 시 chat_id를 config.enc에 영속화
+                eprintln!("[✓] {}", msg!("cli.paired", username, chat_id));
+                // [v0.5.0] 페어링 성공 시 chat_id를 config.enc에 영속화
                 if let Some(ref mut tg) = app_config.telegram {
                     tg.chat_id = Some(chat_id);
                 }
                 if let Err(e) =
                     config::save_config(&app_config, password.as_bytes(), &paths.config_enc)
                 {
-                    eprintln!("[!] 페어링 chat_id 저장 실패: {}", e);
+                    eprintln!("[!] {}", msg!("cli.chat_save_fail", e));
                 } else {
-                    eprintln!("[✓] chat_id 저장 완료 — 재시작 후에도 페어링 유지");
+                    eprintln!("[✓] {}", msg!("cli.chat_saved"));
                 }
             }
-            Ok(core::telegram::BotEvent::MessageReceived(msg)) => {
-                eprintln!("[→] 메시지 수신: {}", msg);
+            Ok(core::telegram::BotEvent::MessageReceived(m)) => {
+                eprintln!("[→] {}", msg!("cli.msg_received", m));
                 // TODO: 에이전트 응답 로직 연결
             }
             Ok(core::telegram::BotEvent::Error(err)) => {
                 eprintln!("[!] {}", err);
             }
             Ok(core::telegram::BotEvent::Shutdown) => {
-                eprintln!("[*] 봇 종료됨.");
+                eprintln!("[*] {}", msg!("cli.bot_shutdown"));
                 break;
             }
             _ => {} // 타임아웃 또는 기타
@@ -195,7 +196,7 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("[오류] {}", e);
+        eprintln!("[ERROR] {}", e);
         std::process::exit(1);
     }
 }

@@ -52,7 +52,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         // === 대시보드 ===
         "dash.agent_status" => "━━ 에이전트 상태 ━━",
         "dash.agent_name" => "에이전트: {}",
-        "dash.model" => "모델: {} ({:?})",
+        "dash.model" => "모델: {} ({})",
         "dash.security" => "보안: Jailing=ON | ChaCha20=ON",
         "dash.llm_none" => "LLM 미설정",
         "dash.skill_header" => "━━ 스킬 목록 (TOML + Rhai) ━━",

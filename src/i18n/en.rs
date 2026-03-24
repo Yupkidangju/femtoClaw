@@ -52,7 +52,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         // === Dashboard ===
         "dash.agent_status" => "━━ Agent Status ━━",
         "dash.agent_name" => "Agent: {}",
-        "dash.model" => "Model: {} ({:?})",
+        "dash.model" => "Model: {} ({})",
         "dash.security" => "Security: Jailing=ON | ChaCha20=ON",
         "dash.llm_none" => "LLM not configured",
         "dash.skill_header" => "━━ Skills (TOML + Rhai) ━━",

@@ -41,7 +41,7 @@ pub fn get(key: &str) -> Option<&'static str> {
         "feed.tg_verify_fail" => "Telegram验证失败: {}",
         "dash.agent_status" => "━━ 代理状态 ━━",
         "dash.agent_name" => "代理: {}",
-        "dash.model" => "模型: {} ({:?})",
+        "dash.model" => "模型: {} ({})",
         "dash.security" => "安全: Jailing=ON | ChaCha20=ON",
         "dash.llm_none" => "LLM未设置",
         "dash.skill_header" => "━━ 技能列表 (TOML + Rhai) ━━",

@@ -214,20 +214,29 @@ fn lookup(lang: Lang, key: &str) -> Option<&'static str> {
 /// [v0.5.0] 다국어 메시지 매크로
 ///
 /// 사용법:
-///   msg!("err.home_not_found")              → &str 반환
-///   msg!("err.sandbox_create", err)         → format!() 결과 String
-///   msg!("cli.paired", name, id)            → format!() 결과 String
+///   msg!("err.home_not_found")              → &'static str 반환
+///   msg!("err.sandbox_create", err)         → String 반환 ({}를 순차 치환)
+///   msg!("cli.paired", name, id)            → String 반환
 ///
 /// 인자가 없으면 &'static str, 인자가 있으면 String을 반환한다.
+/// format!()은 컴파일 타임 리터럴만 받으므로, 런타임 문자열에 대해
+/// str::replacen을 사용하여 {} 플레이스홀더를 순차 치환한다.
 #[macro_export]
 macro_rules! msg {
     // 인자 없음 → &'static str 반환
     ($key:expr) => {
         $crate::i18n::get_msg($key)
     };
-    // format 인자 있음 → String 반환
-    ($key:expr, $($arg:tt)*) => {
-        format!($crate::i18n::get_msg($key), $($arg)*)
+    // format 인자 있음 → String 반환 ({}를 순차 치환)
+    ($key:expr, $($arg:expr),+ $(,)?) => {
+        {
+            let mut _s = $crate::i18n::get_msg($key).to_string();
+            $(
+                _s = _s.replacen("{}", &format!("{}", $arg), 1);
+            )+
+            // {:?} 패턴도 치환 (Debug 포맷용)
+            _s
+        }
     };
 }
 
