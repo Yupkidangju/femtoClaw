@@ -76,7 +76,7 @@ fn setup_shutdown_handler() -> Arc<AtomicBool> {
     shutdown
 }
 
-/// [v0.5.0] 메인 초기화 → i18n 감지 → TUI/Headless 분기
+/// [v0.6.0] 메인 초기화 → i18n 감지 → Bootstrap → TUI/Headless 분기
 fn run() -> FemtoResult<()> {
     // OS 시스템 언어 자동 감지 (미지원 언어 → 영어 fallback)
     i18n::detect_and_set_lang();
@@ -91,10 +91,28 @@ fn run() -> FemtoResult<()> {
     // 2. 프로세스 락 획득
     let _lock = sandbox::ProcessLock::acquire(&paths.lock_file)?;
 
-    // 3. Graceful Shutdown 핸들러
+    // 3. [v0.6.0] Agent Bootstrap — workspace에 agent.toml이 없으면 초기화
+    if core::bootstrap::check_state(&paths.workspace)
+        == core::bootstrap::BootstrapState::NeedsBootstrap
+    {
+        eprintln!("[*] First run detected — bootstrapping agent workspace...");
+        let lang_code = i18n::current_lang().code();
+        if let Err(e) = core::bootstrap::run_bootstrap(
+            &paths.workspace,
+            "Alpha", // 기본 에이전트 이름
+            "User",  // 기본 사용자 이름 (TUI 온보딩에서 갱신 가능)
+            lang_code,
+        ) {
+            eprintln!("[!] Bootstrap failed: {}", e);
+        } else {
+            eprintln!("[✓] Agent workspace initialized.");
+        }
+    }
+
+    // 4. Graceful Shutdown 핸들러
     let _shutdown_flag = setup_shutdown_handler();
 
-    // 4. 모드별 분기
+    // 5. 모드별 분기
     match mode {
         RunMode::Tui => {
             let mut app = tui::app::App::new(paths);
