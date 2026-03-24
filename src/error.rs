@@ -10,45 +10,45 @@ use thiserror::Error;
 pub enum FemtoError {
     // --- 샌드박스 관련 ---
     /// 홈 디렉토리를 찾을 수 없는 경우 (dirs 크레이트 실패)
-    #[error("홈 디렉토리를 찾을 수 없습니다")]
+    #[error("Home directory not found")]
     HomeDirectoryNotFound,
 
     /// 샌드박스 디렉토리 생성 실패
-    #[error("샌드박스 디렉토리 생성 실패: {0}")]
+    #[error("Sandbox directory creation failed: {0}")]
     SandboxCreation(#[source] std::io::Error),
 
     /// 프로세스 락 획득 실패 (이미 다른 인스턴스가 실행 중)
-    #[error("femtoClaw가 이미 실행 중입니다 (PID: {pid})")]
+    #[error("femtoClaw already running (PID: {pid})")]
     AlreadyRunning { pid: u32 },
 
     /// 락 파일 I/O 오류
-    #[error("락 파일 처리 실패: {0}")]
+    #[error("Lock file error: {0}")]
     LockFileError(#[source] std::io::Error),
 
     // --- 암호화 관련 ---
     /// 마스터 패스워드로부터 키 파생 실패 (Argon2)
-    #[error("암호화 키 파생 실패")]
+    #[error("Key derivation failed")]
     KeyDerivation,
 
     /// 데이터 암호화 실패 (ChaCha20Poly1305)
-    #[error("데이터 암호화 실패")]
+    #[error("Encryption failed")]
     Encryption,
 
     /// 데이터 복호화 실패 (비밀번호 오류 또는 데이터 손상)
-    #[error("복호화 실패: 비밀번호가 올바르지 않거나 데이터가 손상되었습니다")]
+    #[error("Decryption failed: wrong password or corrupted data")]
     Decryption,
 
     // --- 설정 파일 관련 ---
     /// config.enc 파일 읽기/쓰기 실패
-    #[error("설정 파일 I/O 오류: {0}")]
+    #[error("Config I/O error: {0}")]
     ConfigIo(#[source] std::io::Error),
 
     /// config.enc 파일 형식이 올바르지 않음 (매직넘버 불일치 등)
-    #[error("설정 파일 형식이 올바르지 않습니다")]
+    #[error("Invalid config file format")]
     InvalidConfigFormat,
 
     /// JSON 직렬화/역직렬화 실패
-    #[error("설정 직렬화 오류: {0}")]
+    #[error("Serialization error: {0}")]
     Serialization(#[source] serde_json::Error),
 }
 
