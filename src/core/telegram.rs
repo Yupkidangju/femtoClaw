@@ -231,7 +231,7 @@ pub fn spawn_bot(
             .worker_threads(2)
             .enable_all()
             .build()
-            .expect("tokio 런타임 생성 실패");
+            .expect("tokio runtime creation failed");
 
         rt.block_on(async move {
             run_bot(
@@ -289,7 +289,7 @@ async fn run_bot(
             .dependencies(dptree::deps![state, tx])
             .default_handler(|_upd| async {})
             .error_handler(LoggingErrorHandler::with_custom_text(
-                "텔레그램 디스패처 오류",
+                "Telegram dispatcher error",
             ))
             .build();
 
@@ -320,13 +320,13 @@ async fn run_bot(
         // 비정상 종료 → Exponential Backoff 후 재연결
         let delay = backoff.next_delay();
         let _ = event_tx.send(BotEvent::Error(format!(
-            "텔레그램 연결 끊김 — {}초 후 재연결",
+            "Connection lost — reconnecting in {}s",
             delay.as_secs()
         )));
 
         if backoff.warning_triggered {
             let _ = event_tx.send(BotEvent::Error(
-                "⚠ 5분 이상 연속 실패! 네트워크 및 토큰 확인 필요".to_string(),
+                "⚠ 5+ min failures! Check network and token".to_string(),
             ));
         }
 
@@ -378,10 +378,10 @@ async fn handle_message(
                     bot.send_message(
                         chat_id,
                         format!(
-                            "✅ *femtoClaw 페어링 성공\\!*\n\n\
-                        기기가 연결되었습니다\\.\n\
-                        이제 메시지를 보내면 에이전트가 응답합니다\\.\n\n\
-                        `/help` — 명령어 목록"
+                            "✅ *femtoClaw paired\\!*\n\n\
+                        Device connected\\.\n\
+                        Send a message and the agent will respond\\.\n\n\
+                        `/help` — Command list"
                         ),
                     )
                     .parse_mode(ParseMode::MarkdownV2)
@@ -390,20 +390,17 @@ async fn handle_message(
 
                     let _ = event_tx.send(BotEvent::Paired(chat_id.0, username));
                 } else {
-                    bot.send_message(
-                        chat_id,
-                        "❌ PIN이 일치하지 않습니다. TUI에 표시된 PIN을 확인하세요.",
-                    )
-                    .await
-                    .ok();
+                    bot.send_message(chat_id, "❌ Incorrect PIN. Check the PIN shown on TUI.")
+                        .await
+                        .ok();
                 }
             } else {
-                bot.send_message(chat_id, "사용법: /pair 123456").await.ok();
+                bot.send_message(chat_id, "Usage: /pair 123456").await.ok();
             }
         } else {
             bot.send_message(
                 chat_id,
-                "🔒 먼저 페어링이 필요합니다.\n/pair [PIN코드]를 입력하세요.",
+                "🔒 Pairing required.\nSend /pair [PIN] to connect.",
             )
             .await
             .ok();
@@ -417,7 +414,7 @@ async fn handle_message(
 
         // 자신의 chat_id만 허용
         if chat_id.0 != paired_id {
-            bot.send_message(chat_id, "⚠️ 이 봇은 다른 기기와 페어링되어 있습니다.")
+            bot.send_message(chat_id, "⚠️ This bot is paired with another device.")
                 .await
                 .ok();
             return Ok(());
@@ -429,13 +426,13 @@ async fn handle_message(
                 "/help" => {
                     bot.send_message(
                         chat_id,
-                        "📋 femtoClaw 명령어:\n\n\
-                        /help — 이 도움말\n\
-                        /status — 에이전트 상태\n\
-                        /undo — 마지막 동작 취소\n\
-                        /agents — 에이전트 목록\n\
-                        /agent N — 에이전트 전환\n\n\
-                        그 외 메시지는 에이전트에게 전달됩니다.",
+                        "📋 femtoClaw commands:\n\n\
+                        /help — This help\n\
+                        /status — Agent status\n\
+                        /undo — Undo last action\n\
+                        /agents — Agent list\n\
+                        /agent N — Switch agent\n\n\
+                        Other messages are forwarded to the agent.",
                     )
                     .await
                     .ok();
@@ -445,12 +442,9 @@ async fn handle_message(
                         let s = state.lock().unwrap();
                         s.active_agent_id
                     };
-                    bot.send_message(
-                        chat_id,
-                        format!("🟢 femtoClaw 에이전트 #{} 활성 중", agent_id),
-                    )
-                    .await
-                    .ok();
+                    bot.send_message(chat_id, format!("🟢 femtoClaw Agent #{} active", agent_id))
+                        .await
+                        .ok();
                 }
                 // [v0.3.0] /agents — 에이전트 목록
                 "/agents" => {
@@ -462,13 +456,13 @@ async fn handle_message(
                         .iter()
                         .map(|id| {
                             if *id == active {
-                                format!("▶ Agent #{} (활성)", id)
+                                format!("▶ Agent #{} (active)", id)
                             } else {
                                 format!("  Agent #{}", id)
                             }
                         })
                         .collect();
-                    bot.send_message(chat_id, format!("👥 에이전트 목록:\n{}", list.join("\n")))
+                    bot.send_message(chat_id, format!("👥 Agent list:\n{}", list.join("\n")))
                         .await
                         .ok();
                 }
@@ -490,7 +484,7 @@ async fn handle_message(
                                 if success {
                                     bot.send_message(
                                         chat_id,
-                                        format!("✅ 에이전트 #{}로 전환되었습니다", agent_id),
+                                        format!("✅ Switched to Agent #{}", agent_id),
                                     )
                                     .await
                                     .ok();
@@ -498,17 +492,17 @@ async fn handle_message(
                                 } else {
                                     bot.send_message(
                                         chat_id,
-                                        format!("❌ 에이전트 #{}을(를) 찾을 수 없습니다. /agents로 확인하세요.", agent_id),
+                                        format!("❌ Agent #{} not found. Check /agents.", agent_id),
                                     )
                                     .await
                                     .ok();
                                 }
                             } else {
-                                bot.send_message(chat_id, "사용법: /agent 1").await.ok();
+                                bot.send_message(chat_id, "Usage: /agent 1").await.ok();
                             }
                         }
                     } else {
-                        bot.send_message(chat_id, "알 수 없는 명령어입니다. /help를 확인하세요.")
+                        bot.send_message(chat_id, "Unknown command. Try /help.")
                             .await
                             .ok();
                     }
@@ -517,7 +511,7 @@ async fn handle_message(
         } else {
             // 일반 메시지 → 에이전트로 전달
             let _ = event_tx.send(BotEvent::MessageReceived(text));
-            bot.send_message(chat_id, "⏳ 처리 중...").await.ok();
+            bot.send_message(chat_id, "⏳ Processing...").await.ok();
         }
     }
 

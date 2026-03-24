@@ -10,12 +10,15 @@
 // 5. TUI 모드: ratatui Amber Monochrome UI 실행
 //    Headless 모드: 텔레그램 전용 봇 실행
 
+// [v0.5.0] i18n 모듈은 msg!() 매크로를 전역에 노출하므로
+// 다른 모든 mod 선언보다 먼저 위치해야 한다.
+#[macro_use]
+mod i18n;
+
 mod config;
 mod core;
 mod db;
 mod error;
-#[macro_use]
-mod i18n;
 mod sandbox;
 mod security;
 mod skills;

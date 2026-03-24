@@ -135,7 +135,7 @@ impl AppConfig {
     /// [v0.3.0] 에이전트 추가 (최대 3개 제한)
     pub fn add_agent(&mut self, name: &str) -> Result<u8, String> {
         if self.agents.len() >= 3 {
-            return Err("에이전트는 최대 3개까지 등록 가능합니다".to_string());
+            return Err(msg!("err.max_agents").to_string());
         }
         let next_id = self.agents.iter().map(|a| a.id).max().unwrap_or(0) + 1;
         self.agents.push(AgentConfig::new(next_id, name));
@@ -148,10 +148,7 @@ impl AppConfig {
             self.active_agent_id = id;
             Ok(())
         } else {
-            Err(format!(
-                "에이전트 #{}을(를) 찾을 수 없거나 비활성화 상태입니다",
-                id
-            ))
+            Err(format!("Agent #{} not found or inactive", id))
         }
     }
 }
