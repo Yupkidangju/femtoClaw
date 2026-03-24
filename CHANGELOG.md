@@ -5,6 +5,33 @@
 버전 관리는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
 
+
+## [0.6.0] - 2026-03-24
+
+### 추가됨 (Added)
+- **[Phase 1] Bootstrap + Persona** — agent.toml/user.toml/MEMORY.md 자동 생성, 첫 실행 의식(BOOTSTRAP.md)
+- **[Phase 2] Chat Loop** — handle_message() 단일 함수로 TUI/Telegram 공용 대화 루프 구현
+- **[Phase 2] Function Calling** — OpenAI tools 파라미터 + tool_calls 응답 파싱 + executor 연쇄 (최대 5 라운드)
+- **[Phase 2] Token Counter** — tiktoken-rs (cl100k_base) 기반 정확한 토큰 수 산정, 컨텍스트 윈도우 자동 트림
+- **[Phase 2] Context Manager** — persona + tools + MEMORY.md + daily_log → system prompt 조립
+- **[Phase 3] Bootstrap 통합** — main.rs run()에 자동 bootstrap 호출 (workspace에 agent.toml 없으면 초기화)
+- **[Phase 4] TUI Chat Panel** — Dashboard [C] 키로 채팅 모드 진입, 상단(대화기록)+하단(입력) 분할, 토큰 사용량 실시간 표시
+- **[Phase 4] Telegram 연동** — headless 모드 MessageReceived → chat_loop → SendResponse (TODO 해소)
+- **core/persona.rs, core/bootstrap.rs, core/context.rs, core/tool_protocol.rs, core/chat_loop.rs** 신규 모듈
+- **tiktoken-rs = "0.9"** 의존성 추가
+
+### 변경됨 (Changed)
+- Cargo.toml 버전: 0.4.0 → **0.6.0**
+- core/agent.rs 전면 리팩토링 — ChatMessage에 tool_call_id/tool_calls/name 필드 추가, AgentResponse에 tool_calls 파싱
+- main.rs run_headless() — TODO 주석을 실제 chat_loop 호출로 대체
+- spec.md §3.5a Agent Runtime Architecture 섹션 추가
+- dashboard 헤더에 토큰 사용량 표시, 상태바에 채팅 모드 안내
+
+### 참고사항
+- **v0.6.0 전체 완료** — Phase 1~4, 110개 테스트 통과
+- 핵심 철학: "인프라에 두뇌를 입주시키다" — agent.rs/executor/prompt/registry가 chat_loop을 통해 전부 연결됨
+- 에이전트가 "살아있는 봇"으로 동작 가능한 최초 버전
+
 ## [0.4.0] - 2026-03-23
 
 ### 추가됨 (Added)
