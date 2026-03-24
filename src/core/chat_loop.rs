@@ -1,20 +1,158 @@
 // femtoClaw — 채팅 루프 모듈
 // [v0.6.0] 에이전트 대화의 핵심 런타임
+// [v0.7.0] ChatWorker: background thread로 LLM 호출 분리 (TUI 비동기)
 //
 // 설계 원칙:
 //   - 단일 handle_message() 함수 — TUI, 텔레그램 모두 이것만 호출
 //   - 게이트웨이/메시지 버스 없이 직접 호출하는 단순 동기 구조
 //   - Function Calling: LLM → tool_calls → executor → 결과 피드백 → 재호출
 //   - 대화 기록 자동 관리 (메모리 + 세션 트랜스크립트)
+//   - [v0.7.0] ChatWorker: TUI용 비동기 래퍼 (background thread + mpsc 채널)
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 
-use super::agent::{AgentConfig, AgentResponse, ChatMessage};
+use super::agent::{AgentConfig, ChatMessage};
 use super::context::ContextManager;
 use super::persona::Persona;
 use super::tool_protocol;
 use crate::config::LlmProviderConfig;
 use crate::tools::executor::ToolExecutor;
+
+/// [v0.7.0] 비동기 채팅 응답 유형 (TUI tick()에서 수신)
+#[derive(Debug, Clone)]
+pub enum ChatEvent {
+    /// LLM 호출 시작됨 — "생각 중..." 표시용
+    Thinking,
+    /// 도구 실행 중 — 어떤 도구가 사용되었는지 알림
+    ToolUsed(String),
+    /// 최종 텍스트 응답
+    Reply(String),
+    /// 에러 발생
+    Error(String),
+}
+
+/// [v0.7.0] TUI용 비동기 채팅 워커
+/// ChatSession을 background thread로 이동하여 UI blocking을 방지한다.
+///
+/// 사용법:
+///   let worker = ChatWorker::spawn(llm_config, persona, workspace);
+///   worker.send("hello");       // 비동기 전송
+///   // tick()에서:
+///   while let Some(event) = worker.try_recv() { ... }
+pub struct ChatWorker {
+    /// 사용자 메시지 전송 채널
+    request_tx: mpsc::Sender<String>,
+    /// LLM 응답 수신 채널
+    response_rx: mpsc::Receiver<ChatEvent>,
+    /// 토큰 사용량 조회용 공유 상태
+    token_state: std::sync::Arc<std::sync::Mutex<TokenState>>,
+    /// 현재 LLM 호출 중인지 여부
+    busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// [v0.7.0] 공유 토큰 상태 (thread-safe)
+#[derive(Debug, Clone, Default)]
+pub struct TokenState {
+    pub system: usize,
+    pub messages: usize,
+    pub total: usize,
+    pub max: usize,
+    pub message_count: usize,
+}
+
+impl TokenState {
+    pub fn utilization(&self) -> f64 {
+        if self.max == 0 {
+            return 0.0;
+        }
+        self.total as f64 / self.max as f64
+    }
+}
+
+impl ChatWorker {
+    /// [v0.7.0] 새 ChatWorker 생성 + background thread 시작
+    pub fn spawn(llm_config: &LlmProviderConfig, persona: &Persona, workspace: &Path) -> Self {
+        let (request_tx, request_rx) = mpsc::channel::<String>();
+        let (response_tx, response_rx) = mpsc::channel::<ChatEvent>();
+        let token_state = std::sync::Arc::new(std::sync::Mutex::new(TokenState::default()));
+        let busy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // ChatSession은 background thread가 소유
+        let mut session = ChatSession::new(llm_config, persona, workspace);
+
+        let ts = token_state.clone();
+        let busy_flag = busy.clone();
+
+        // background thread 시작
+        std::thread::spawn(move || {
+            // 초기 토큰 상태 업데이트
+            Self::update_token_state(&session, &ts);
+
+            while let Ok(user_msg) = request_rx.recv() {
+                // "생각 중..." 알림
+                busy_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                let _ = response_tx.send(ChatEvent::Thinking);
+
+                // 메시지 처리 (blocking — 이 thread에서는 OK)
+                let reply = session.handle_message(&user_msg);
+
+                // 토큰 상태 업데이트
+                Self::update_token_state(&session, &ts);
+
+                // 응답 전송
+                let _ = response_tx.send(ChatEvent::Reply(reply));
+                busy_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+
+        Self {
+            request_tx,
+            response_rx,
+            token_state,
+            busy,
+        }
+    }
+
+    /// [v0.7.0] 사용자 메시지 비동기 전송
+    pub fn send(&self, message: &str) -> bool {
+        self.request_tx.send(message.to_string()).is_ok()
+    }
+
+    /// [v0.7.0] 응답 비동기 수신 (non-blocking)
+    pub fn try_recv(&self) -> Option<ChatEvent> {
+        self.response_rx.try_recv().ok()
+    }
+
+    /// [v0.7.0] 현재 LLM 호출 중인지 확인
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// [v0.7.0] 토큰 사용량 조회 (thread-safe)
+    pub fn token_state(&self) -> TokenState {
+        self.token_state
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default()
+    }
+
+    /// [v0.7.0] 세션의 토큰 상태를 공유 상태에 반영
+    fn update_token_state(
+        session: &ChatSession,
+        state: &std::sync::Arc<std::sync::Mutex<TokenState>>,
+    ) {
+        let usage = session.token_usage();
+        if let Ok(mut s) = state.lock() {
+            s.system = usage.system;
+            s.messages = usage.messages;
+            s.total = usage.total;
+            s.max = usage.max;
+            s.message_count = session.message_count();
+        }
+    }
+}
 
 /// [v0.6.0] 채팅 세션 상태
 pub struct ChatSession {

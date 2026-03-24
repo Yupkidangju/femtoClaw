@@ -6,6 +6,24 @@
 
 
 
+
+## [0.7.0] - 2026-03-24
+
+### 추가됨 (Added)
+- **ChatWorker** — background thread + mpsc 채널 기반 비동기 LLM 호출 (TUI가 LLM 응답 대기 중에도 멈추지 않음)
+- **ChatEvent** enum — Thinking / Reply / ToolUsed / Error (tick()에서 비동기 수신)
+- **TokenState** — thread-safe Arc<Mutex> 기반 토큰 상태 공유
+- **입력 잠금** — LLM 응답 대기 중(chat_waiting) 키 입력 자동 차단 + "🤔 Thinking..." 표시
+
+### 변경됨 (Changed)
+- Cargo.toml 버전: 0.6.0 → **0.7.0**
+- TUI: `ChatSession` 직접 호출(blocking) → `ChatWorker` 비동기 전환
+- Dashboard 토큰 표시: `session.token_usage()` → `worker.token_state()` (thread-safe)
+
+### 참고사항
+- v0.6.0의 최대 이슈(TUI blocking 5~30초) 완전 해소
+- 110개 테스트 전체 통과
+
 ## [0.6.0] - 2026-03-24
 
 ### 추가됨 (Added)

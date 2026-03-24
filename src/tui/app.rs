@@ -160,15 +160,17 @@ pub struct App {
     // 대시보드 로그
     feed_lines: Vec<String>,
 
-    // [v0.6.0] 채팅 상태
+    // [v0.7.0] 채팅 상태
     /// 채팅 입력 모드 활성화 여부
     chat_mode: bool,
     /// 채팅 입력 버퍼
     chat_input: String,
     /// 채팅 기록 (표시용)
     chat_history: Vec<(String, String)>, // (role, content)
-    /// 채팅 세션 (LLM 설정 완료 후 생성)
-    chat_session: Option<crate::core::chat_loop::ChatSession>,
+    /// [v0.7.0] 비동기 채팅 워커 (background thread)
+    chat_worker: Option<crate::core::chat_loop::ChatWorker>,
+    /// [v0.7.0] LLM 응답 대기 중 여부
+    chat_waiting: bool,
 }
 
 impl App {
@@ -206,7 +208,8 @@ impl App {
             chat_mode: false,
             chat_input: String::new(),
             chat_history: Vec::new(),
-            chat_session: None,
+            chat_worker: None,
+            chat_waiting: false,
         }
     }
 
@@ -285,6 +288,49 @@ impl App {
                         timestamp(),
                         msg!("feed.tg_verify_fail", e)
                     ));
+                }
+            }
+        }
+
+        // [v0.7.0] 채팅 워커 비동기 응답 수신
+        if let Some(ref worker) = self.chat_worker {
+            while let Some(event) = worker.try_recv() {
+                match event {
+                    crate::core::chat_loop::ChatEvent::Thinking => {
+                        self.chat_waiting = true;
+                        self.chat_history
+                            .push(("system".into(), "🤔 Thinking...".into()));
+                    }
+                    crate::core::chat_loop::ChatEvent::Reply(reply) => {
+                        self.chat_waiting = false;
+                        // "Thinking..." 제거
+                        if let Some(last) = self.chat_history.last() {
+                            if last.1 == "🤔 Thinking..." {
+                                self.chat_history.pop();
+                            }
+                        }
+                        self.chat_history.push(("assistant".into(), reply.clone()));
+                        self.feed_lines.push(format!(
+                            "[{}] Agent: {}",
+                            timestamp(),
+                            reply.chars().take(100).collect::<String>()
+                        ));
+                    }
+                    crate::core::chat_loop::ChatEvent::ToolUsed(tool) => {
+                        self.chat_history
+                            .push(("system".into(), format!("🔧 Using tool: {}", tool)));
+                    }
+                    crate::core::chat_loop::ChatEvent::Error(err) => {
+                        self.chat_waiting = false;
+                        // "Thinking..." 제거
+                        if let Some(last) = self.chat_history.last() {
+                            if last.1 == "🤔 Thinking..." {
+                                self.chat_history.pop();
+                            }
+                        }
+                        self.chat_history
+                            .push(("system".into(), format!("⚠️ {}", err)));
+                    }
                 }
             }
         }
@@ -388,27 +434,26 @@ impl App {
     }
 
     fn handle_dashboard_key(&mut self, key: KeyEvent) {
-        // [v0.6.0] 채팅 모드 분기
+        // [v0.7.0] 채팅 모드 분기 — 비동기 ChatWorker 기반
         if self.chat_mode {
             match key.code {
                 KeyCode::Esc => {
                     self.chat_mode = false;
                 }
                 KeyCode::Enter => {
+                    // [v0.7.0] 대기 중이면 입력 무시
+                    if self.chat_waiting {
+                        return;
+                    }
                     if !self.chat_input.is_empty() {
                         let user_msg = self.chat_input.clone();
                         self.chat_input.clear();
                         self.chat_history.push(("user".into(), user_msg.clone()));
 
-                        // ChatSession이 있으면 LLM 호출
-                        if let Some(ref mut session) = self.chat_session {
-                            let reply = session.handle_message(&user_msg);
-                            self.chat_history.push(("assistant".into(), reply.clone()));
-                            self.feed_lines.push(format!(
-                                "[{}] Agent: {}",
-                                timestamp(),
-                                reply.chars().take(100).collect::<String>()
-                            ));
+                        // [v0.7.0] worker.send() — 비동기 전송, 즉시 반환
+                        if let Some(ref worker) = self.chat_worker {
+                            worker.send(&user_msg);
+                            // 응답은 tick()의 ChatEvent::Reply에서 자동 수신
                         } else {
                             self.chat_history.push((
                                 "system".into(),
@@ -418,10 +463,12 @@ impl App {
                     }
                 }
                 KeyCode::Backspace => {
-                    self.chat_input.pop();
+                    if !self.chat_waiting {
+                        self.chat_input.pop();
+                    }
                 }
                 KeyCode::Char(c) => {
-                    if self.chat_input.len() < 500 {
+                    if !self.chat_waiting && self.chat_input.len() < 500 {
                         self.chat_input.push(c);
                     }
                 }
@@ -432,11 +479,11 @@ impl App {
 
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
-            // [v0.6.0] 'c' — 채팅 모드 진입
+            // [v0.7.0] 'c' — 채팅 모드 진입 (비동기 ChatWorker)
             KeyCode::Char('c') => {
                 self.chat_mode = true;
-                // 최초 진입 시 ChatSession 생성
-                if self.chat_session.is_none() {
+                // 최초 진입 시 ChatWorker 생성 (background thread)
+                if self.chat_worker.is_none() {
                     if let Some(ref llm) = self.app_config.llm_provider {
                         let persona = crate::core::persona::Persona::load(&self.paths.workspace)
                             .unwrap_or_else(|| {
@@ -444,13 +491,13 @@ impl App {
                                     &self.app_config.agent_name,
                                 )
                             });
-                        self.chat_session = Some(crate::core::chat_loop::ChatSession::new(
+                        self.chat_worker = Some(crate::core::chat_loop::ChatWorker::spawn(
                             llm,
                             &persona,
                             &self.paths.workspace,
                         ));
                         self.feed_lines
-                            .push(format!("[{}] Chat session started.", timestamp()));
+                            .push(format!("[{}] Chat session started (async).", timestamp()));
                     }
                 }
             }
@@ -1188,14 +1235,14 @@ impl App {
             .map(|p| format!("{:?}", p.preset))
             .unwrap_or_else(|| "—".into());
 
-        // [v0.6.0] 토큰 사용량 표시
-        let token_info = if let Some(ref session) = self.chat_session {
-            let usage = session.token_usage();
+        // [v0.7.0] 토큰 사용량 표시 (thread-safe)
+        let token_info = if let Some(ref worker) = self.chat_worker {
+            let ts = worker.token_state();
             format!(
                 " │ Tokens: {}/{} ({:.0}%)",
-                usage.total,
-                usage.max,
-                usage.utilization() * 100.0
+                ts.total,
+                ts.max,
+                ts.utilization() * 100.0
             )
         } else {
             String::new()
