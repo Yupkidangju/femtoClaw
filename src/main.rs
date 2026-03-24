@@ -130,7 +130,7 @@ fn run() -> FemtoResult<()> {
 /// config.enc에서 설정 로드 → 텔레그램 봇 시작 → 종료 신호까지 대기.
 fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -> FemtoResult<()> {
     eprintln!("┌──────────────────────────────────────────┐");
-    eprintln!("│  femtoClaw v0.4.0 — Headless Mode          │");
+    eprintln!("│  femtoClaw v0.6.0 — Headless Mode          │");
     eprintln!("└──────────────────────────────────────────┘");
 
     // config.enc 존재 여부 확인
@@ -174,6 +174,16 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
     eprintln!("[✓] Bot active — PIN: {}", pin);
     eprintln!("[*] Ctrl+C to quit.");
 
+    // [v0.6.0] ChatSession 생성 (에이전트 응답용)
+    let mut chat_session = app_config.llm_provider.as_ref().map(|llm| {
+        let persona = core::persona::Persona::load(&paths.workspace)
+            .unwrap_or_else(|| core::persona::Persona::new_default(&app_config.agent_name));
+        core::chat_loop::ChatSession::new(llm, &persona, &paths.workspace)
+    });
+    if chat_session.is_some() {
+        eprintln!("[✓] Chat session ready.");
+    }
+
     // 이벤트 루프: 종료 신호까지 대기하면서 봇 이벤트 처리
     loop {
         if shutdown_flag.load(Ordering::Relaxed) {
@@ -199,7 +209,13 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
             }
             Ok(core::telegram::BotEvent::MessageReceived(m)) => {
                 eprintln!("[→] {}", msg!("cli.msg_received", m));
-                // TODO: 에이전트 응답 로직 연결
+                // [v0.6.0] 에이전트 응답 — chat_loop 연동
+                if let Some(ref mut session) = chat_session {
+                    let reply = session.handle_message(&m);
+                    eprintln!("[←] Agent: {}", reply.chars().take(100).collect::<String>());
+                    // Telegram으로 응답 전송
+                    let _ = _cmd_tx.send(core::telegram::BotCommand::SendResponse(reply));
+                }
             }
             Ok(core::telegram::BotEvent::Error(err)) => {
                 eprintln!("[!] {}", err);

@@ -1,6 +1,7 @@
 // femtoClaw — TUI 앱 상태 및 화면 렌더링
 // [v0.1.0] Step 2: 앱 상태 머신, 키보드 입력 처리, 화면별 ratatui 렌더링,
 // reqwest::blocking 기반 API 검증을 통합 관리한다.
+// [v0.6.0] Dashboard 채팅 패널 추가 — handle_message() 연동
 //
 // 화면 전환 흐름 (designs.md 3절):
 // Boot → Password → (최초실행 ? Onboard : Dashboard) → Dashboard
@@ -158,6 +159,16 @@ pub struct App {
 
     // 대시보드 로그
     feed_lines: Vec<String>,
+
+    // [v0.6.0] 채팅 상태
+    /// 채팅 입력 모드 활성화 여부
+    chat_mode: bool,
+    /// 채팅 입력 버퍼
+    chat_input: String,
+    /// 채팅 기록 (표시용)
+    chat_history: Vec<(String, String)>, // (role, content)
+    /// 채팅 세션 (LLM 설정 완료 후 생성)
+    chat_session: Option<crate::core::chat_loop::ChatSession>,
 }
 
 impl App {
@@ -192,6 +203,10 @@ impl App {
             async_rx: rx,
             app_config: AppConfig::default(),
             feed_lines: vec![format!("[{}] {}", timestamp(), msg!("boot.init_msg"))],
+            chat_mode: false,
+            chat_input: String::new(),
+            chat_history: Vec::new(),
+            chat_session: None,
         }
     }
 
@@ -373,8 +388,72 @@ impl App {
     }
 
     fn handle_dashboard_key(&mut self, key: KeyEvent) {
+        // [v0.6.0] 채팅 모드 분기
+        if self.chat_mode {
+            match key.code {
+                KeyCode::Esc => {
+                    self.chat_mode = false;
+                }
+                KeyCode::Enter => {
+                    if !self.chat_input.is_empty() {
+                        let user_msg = self.chat_input.clone();
+                        self.chat_input.clear();
+                        self.chat_history.push(("user".into(), user_msg.clone()));
+
+                        // ChatSession이 있으면 LLM 호출
+                        if let Some(ref mut session) = self.chat_session {
+                            let reply = session.handle_message(&user_msg);
+                            self.chat_history.push(("assistant".into(), reply.clone()));
+                            self.feed_lines.push(format!(
+                                "[{}] Agent: {}",
+                                timestamp(),
+                                reply.chars().take(100).collect::<String>()
+                            ));
+                        } else {
+                            self.chat_history.push((
+                                "system".into(),
+                                "⚠️ No LLM configured. Complete onboarding first.".into(),
+                            ));
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.chat_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    if self.chat_input.len() < 500 {
+                        self.chat_input.push(c);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
+            // [v0.6.0] 'c' — 채팅 모드 진입
+            KeyCode::Char('c') => {
+                self.chat_mode = true;
+                // 최초 진입 시 ChatSession 생성
+                if self.chat_session.is_none() {
+                    if let Some(ref llm) = self.app_config.llm_provider {
+                        let persona = crate::core::persona::Persona::load(&self.paths.workspace)
+                            .unwrap_or_else(|| {
+                                crate::core::persona::Persona::new_default(
+                                    &self.app_config.agent_name,
+                                )
+                            });
+                        self.chat_session = Some(crate::core::chat_loop::ChatSession::new(
+                            llm,
+                            &persona,
+                            &self.paths.workspace,
+                        ));
+                        self.feed_lines
+                            .push(format!("[{}] Chat session started.", timestamp()));
+                    }
+                }
+            }
             KeyCode::Char('1') => {
                 // [v0.2.0] 에이전트 상태 표시
                 self.feed_lines
@@ -1089,6 +1168,7 @@ impl App {
     }
 
     // --- 대시보드 화면 ---
+    // [v0.6.0] 채팅 패널 추가 — 우측을 상단(TERMINAL)+하단(CHAT)으로 분할
     fn render_dashboard(&self, frame: &mut Frame) {
         let area = frame.area();
 
@@ -1107,17 +1187,35 @@ impl App {
             .as_ref()
             .map(|p| format!("{:?}", p.preset))
             .unwrap_or_else(|| "—".into());
+
+        // [v0.6.0] 토큰 사용량 표시
+        let token_info = if let Some(ref session) = self.chat_session {
+            let usage = session.token_usage();
+            format!(
+                " │ Tokens: {}/{} ({:.0}%)",
+                usage.total,
+                usage.max,
+                usage.utilization() * 100.0
+            )
+        } else {
+            String::new()
+        };
+
         let header = Paragraph::new(Line::from(vec![
             Span::styled(" femtoClaw Dashboard ", theme::status_bar()),
             Span::styled(format!(" │ Model: {} ", provider_name), theme::title()),
-            Span::styled(" │ Status: [SECURE] │ Jailed: [ON] ", theme::text()),
+            Span::styled(
+                format!(" │ Status: [SECURE] │ Jailed: [ON]{} ", token_info),
+                theme::text(),
+            ),
         ]));
         frame.render_widget(header, outer[0]);
 
-        // 메인 — 좌(시스템)/우(터미널) 분할
+        // 메인 — 좌(시스템)/우(터미널+채팅) 분할
         let main = Layout::horizontal([Constraint::Length(28), Constraint::Min(0)]).split(outer[1]);
 
         // 좌측: 시스템 정보 + 메뉴
+        let chat_indicator = if self.chat_mode { " ◀ ACTIVE" } else { "" };
         let sys_lines = vec![
             Line::from(Span::styled(" AGENT", theme::title())),
             Line::from(Span::styled(
@@ -1136,6 +1234,14 @@ impl App {
             Line::from(Span::styled("  [4] Time Machine", theme::text())),
             Line::from(Span::styled("  [5] Agent Switch", theme::text())),
             Line::from(Span::styled("  [A] Add Agent", theme::text())),
+            Line::from(Span::styled(
+                format!("  [C] Chat{}", chat_indicator),
+                if self.chat_mode {
+                    theme::title()
+                } else {
+                    theme::text()
+                },
+            )),
         ];
         let sys_block = Block::bordered()
             .title(Span::styled("─ SYSTEM ─", theme::title()))
@@ -1143,31 +1249,79 @@ impl App {
         let sys_widget = Paragraph::new(sys_lines).block(sys_block);
         frame.render_widget(sys_widget, main[0]);
 
-        // 우측: 터미널 피드
-        let visible_lines: usize = main[1].height.saturating_sub(2) as usize;
-        let start = self.feed_lines.len().saturating_sub(visible_lines);
-        let feed: Vec<Line> = self.feed_lines[start..]
-            .iter()
-            .map(|l| {
-                if l.contains("BLOCKED") {
-                    Line::from(Span::styled(l.as_str(), theme::error()))
-                } else {
-                    Line::from(Span::styled(l.as_str(), theme::text()))
-                }
-            })
-            .collect();
+        // 우측: 터미널 + 채팅 패널 분할
+        if self.chat_mode {
+            // [v0.6.0] 채팅 모드: 상단(대화 기록) + 하단(입력)
+            let right = Layout::vertical([
+                Constraint::Min(0),    // 대화 기록
+                Constraint::Length(3), // 입력 영역
+            ])
+            .split(main[1]);
 
-        let feed_block = Block::bordered()
-            .title(Span::styled("─ TERMINAL ─", theme::title()))
-            .border_style(theme::border());
-        let feed_widget = Paragraph::new(feed)
-            .block(feed_block)
-            .wrap(Wrap { trim: false });
-        frame.render_widget(feed_widget, main[1]);
+            // 대화 기록 렌더링
+            let visible = right[0].height.saturating_sub(2) as usize;
+            let start = self.chat_history.len().saturating_sub(visible);
+            let chat_lines: Vec<Line> = self.chat_history[start..]
+                .iter()
+                .map(|(role, content)| {
+                    let (prefix, style) = match role.as_str() {
+                        "user" => ("You: ", theme::title()),
+                        "assistant" => ("🐾 : ", theme::text()),
+                        _ => ("sys: ", theme::muted()),
+                    };
+                    // 긴 메시지는 줄바꿈 없이 잘라서 표시
+                    let display: String = content.chars().take(200).collect();
+                    Line::from(Span::styled(format!("{}{}", prefix, display), style))
+                })
+                .collect();
+
+            let chat_block = Block::bordered()
+                .title(Span::styled("─ CHAT ─", theme::title()))
+                .border_style(theme::active_border());
+            let chat_widget = Paragraph::new(chat_lines)
+                .block(chat_block)
+                .wrap(Wrap { trim: false });
+            frame.render_widget(chat_widget, right[0]);
+
+            // 입력 영역
+            let input_text = format!("▶ {}_", self.chat_input);
+            let input_block = Block::bordered()
+                .title(Span::styled("─ INPUT ─", theme::title()))
+                .border_style(theme::active_border());
+            let input_widget =
+                Paragraph::new(Span::styled(input_text, theme::input())).block(input_block);
+            frame.render_widget(input_widget, right[1]);
+        } else {
+            // 기존 터미널 피드 (채팅 비활성 시)
+            let visible_lines: usize = main[1].height.saturating_sub(2) as usize;
+            let start = self.feed_lines.len().saturating_sub(visible_lines);
+            let feed: Vec<Line> = self.feed_lines[start..]
+                .iter()
+                .map(|l| {
+                    if l.contains("BLOCKED") {
+                        Line::from(Span::styled(l.as_str(), theme::error()))
+                    } else {
+                        Line::from(Span::styled(l.as_str(), theme::text()))
+                    }
+                })
+                .collect();
+
+            let feed_block = Block::bordered()
+                .title(Span::styled("─ TERMINAL ─", theme::title()))
+                .border_style(theme::border());
+            let feed_widget = Paragraph::new(feed)
+                .block(feed_block)
+                .wrap(Wrap { trim: false });
+            frame.render_widget(feed_widget, main[1]);
+        }
 
         // 상태바
-        let status =
-            Paragraph::new(" [Q] Quit  [1-5] Menu  [A] Add Agent  [U] Undo").style(theme::muted());
+        let status_text = if self.chat_mode {
+            " [Esc] Back  [Enter] Send  │ Chat Mode Active"
+        } else {
+            " [Q] Quit  [1-5] Menu  [A] Add Agent  [C] Chat  [U] Undo"
+        };
+        let status = Paragraph::new(status_text).style(theme::muted());
         frame.render_widget(status, outer[2]);
     }
 }
