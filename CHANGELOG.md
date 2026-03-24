@@ -14,6 +14,10 @@
 - **ChatEvent** enum — Thinking / Reply / ToolUsed / Error (tick()에서 비동기 수신)
 - **TokenState** — thread-safe Arc<Mutex> 기반 토큰 상태 공유
 - **입력 잠금** — LLM 응답 대기 중(chat_waiting) 키 입력 자동 차단 + "🤔 Thinking..." 표시
+- **MEMORY.md 자동 큐레이션** — 매 대화 후 요약 라인 추가, 100줄 초과 시 FIFO 자동 정리
+- **세션 트랜스크립트** — `sessions/YYYYMMDD_HHMMSS.md` 형식으로 전체 대화 자동 기록
+- **CJK 레이아웃 보정** — unicode-width 크레이트 적용, truncate_for_display() 표시 너비 기준으로 변경
+- **텔레그램 다국어** — 봇 메시지 4건(pair_success/fail/prompt, help) msg!() 전환
 
 ### 변경됨 (Changed)
 - Cargo.toml 버전: 0.6.0 → **0.7.0**
