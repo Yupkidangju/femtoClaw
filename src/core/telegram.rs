@@ -251,15 +251,19 @@ pub fn spawn_bot(
 
 /// 봇 메인 루프 (tokio async) — Backoff 포함
 /// [v0.4.0] saved_chat_id: 이전 페어링 복원용
+/// [v0.8.0] cmd_rx: 에이전트 응답을 텔레그램으로 전송하는 커맨드 수신 채널
 async fn run_bot(
     token: String,
     pin: String,
     event_tx: mpsc::Sender<BotEvent>,
-    _cmd_rx: mpsc::Receiver<BotCommand>,
+    cmd_rx: mpsc::Receiver<BotCommand>,
     shutdown_flag: Arc<AtomicBool>,
     saved_chat_id: Option<i64>,
 ) {
     let mut backoff = Backoff::new();
+
+    // [v0.8.0] cmd_rx를 Arc<Mutex>로 감싸서 응답 전송 태스크에서 공유
+    let cmd_rx = Arc::new(Mutex::new(cmd_rx));
 
     loop {
         // Graceful Shutdown 체크
@@ -276,6 +280,49 @@ async fn run_bot(
         )));
         let tx = event_tx.clone();
         let flag = shutdown_flag.clone();
+
+        // [v0.8.0] 에이전트 응답 전송 태스크 — cmd_rx에서 SendResponse 수신 시 텔레그램으로 전송
+        let response_bot = Bot::new(&token);
+        let response_state = state.clone();
+        let response_cmd_rx = cmd_rx.clone();
+        let response_flag = shutdown_flag.clone();
+        let response_tx = event_tx.clone();
+        tokio::spawn(async move {
+            loop {
+                if response_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                // std::sync::mpsc는 blocking이므로 try_recv로 폴링
+                let cmd = {
+                    response_cmd_rx
+                        .lock()
+                        .ok()
+                        .and_then(|rx| rx.try_recv().ok())
+                };
+
+                match cmd {
+                    Some(BotCommand::SendResponse(text)) => {
+                        // 페어링된 chat_id에 응답 전송
+                        let chat_id = { response_state.lock().ok().and_then(|s| s.paired_chat_id) };
+                        if let Some(cid) = chat_id {
+                            let _ = response_bot
+                                .send_message(teloxide::types::ChatId(cid), &text)
+                                .await;
+                            let _ = response_tx
+                                .send(BotEvent::ResponseSent(text.chars().take(50).collect()));
+                        }
+                    }
+                    Some(BotCommand::Shutdown) => {
+                        break;
+                    }
+                    None => {
+                        // 메시지 없음 — 100ms 대기
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                }
+            }
+        });
 
         // teloxide dispatcher: 모든 메시지를 핸들러로 라우팅
         let handler = Update::filter_message().endpoint(

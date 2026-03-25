@@ -211,7 +211,10 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
     let mut chat_session = app_config.llm_provider.as_ref().map(|llm| {
         let persona = core::persona::Persona::load(&paths.workspace)
             .unwrap_or_else(|| core::persona::Persona::new_default(&app_config.agent_name));
-        core::chat_loop::ChatSession::new(llm, &persona, &paths.workspace)
+        let mut session = core::chat_loop::ChatSession::new(llm, &persona, &paths.workspace);
+        // [v0.8.0] DB ActionLog 활성화
+        session.set_db_path(paths.db_file.clone());
+        session
     });
     if chat_session.is_some() {
         eprintln!("[✓] Chat session ready.");

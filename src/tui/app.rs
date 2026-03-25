@@ -495,6 +495,7 @@ impl App {
                             llm,
                             &persona,
                             &self.paths.workspace,
+                            Some(self.paths.db_file.clone()),
                         ));
                         self.feed_lines
                             .push(format!("[{}] Chat session started (async).", timestamp()));

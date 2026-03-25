@@ -73,7 +73,13 @@ impl TokenState {
 
 impl ChatWorker {
     /// [v0.7.0] 새 ChatWorker 생성 + background thread 시작
-    pub fn spawn(llm_config: &LlmProviderConfig, persona: &Persona, workspace: &Path) -> Self {
+    /// [v0.8.0] db_path: DB ActionLog 기록용 경로 (None이면 기록 생략)
+    pub fn spawn(
+        llm_config: &LlmProviderConfig,
+        persona: &Persona,
+        workspace: &Path,
+        db_path: Option<PathBuf>,
+    ) -> Self {
         let (request_tx, request_rx) = mpsc::channel::<String>();
         let (response_tx, response_rx) = mpsc::channel::<ChatEvent>();
         let token_state = std::sync::Arc::new(std::sync::Mutex::new(TokenState::default()));
@@ -81,6 +87,10 @@ impl ChatWorker {
 
         // ChatSession은 background thread가 소유
         let mut session = ChatSession::new(llm_config, persona, workspace);
+        // [v0.8.0] DB 기록 활성화
+        if let Some(path) = db_path {
+            session.set_db_path(path);
+        }
 
         let ts = token_state.clone();
         let busy_flag = busy.clone();
@@ -170,6 +180,8 @@ pub struct ChatSession {
     tool_definitions: Vec<super::agent::ToolDefinition>,
     /// [v0.7.0] 세션 트랜스크립트 파일 경로
     session_path: PathBuf,
+    /// [v0.8.0] DB 파일 경로 (ActionLog 기록용, None이면 기록 생략)
+    db_path: Option<PathBuf>,
 }
 
 /// [v0.7.0] MEMORY.md 최대 라인 수 (FIFO 정리 기준)
@@ -209,6 +221,7 @@ impl ChatSession {
             workspace: workspace.to_path_buf(),
             tool_definitions,
             session_path,
+            db_path: None,
         }
     }
 
@@ -246,7 +259,44 @@ impl ChatSession {
         // 6. [v0.7.0] 세션 트랜스크립트에 추가
         self.append_session_transcript(user_message, &reply_text);
 
+        // 7. [v0.8.0] DB ActionLog 기록
+        self.record_to_db(user_message, &reply_text);
+
         reply_text
+    }
+
+    /// [v0.8.0] DB 파일 경로 설정 (ActionLog 기록 활성화)
+    pub fn set_db_path(&mut self, path: PathBuf) {
+        self.db_path = Some(path);
+    }
+
+    /// [v0.8.0] DB에 UserMessage + AgentResponse 기록
+    fn record_to_db(&self, user_msg: &str, agent_msg: &str) {
+        let db_path = match &self.db_path {
+            Some(p) => p,
+            None => return,
+        };
+
+        let db = match crate::db::store::FemtoDb::open(db_path) {
+            Ok(db) => db,
+            Err(_) => return,
+        };
+
+        // 사용자 메시지 기록
+        let user_summary: String = user_msg.chars().take(80).collect();
+        let _ = db.insert_action(
+            &crate::db::store::ActionType::UserMessage,
+            &user_summary,
+            user_msg,
+        );
+
+        // 에이전트 응답 기록
+        let agent_summary: String = agent_msg.chars().take(80).collect();
+        let _ = db.insert_action(
+            &crate::db::store::ActionType::AgentResponse,
+            &agent_summary,
+            agent_msg,
+        );
     }
 
     /// [v0.6.0] LLM 호출 + tool_call 연쇄 처리

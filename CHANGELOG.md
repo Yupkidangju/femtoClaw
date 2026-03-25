@@ -6,6 +6,22 @@
 
 
 
+## [0.8.0] - 2026-03-25
+
+### 추가됨 (Added)
+- **내장 스케줄러** — `schedule.toml` 기반 크론 타이머 + 3종 액션(memory_cleanup, db_backup, daily_summary)
+- **OS 네이티브 예약** — `--install-schedule` / `--uninstall-schedule` CLI (Windows schtasks, Linux crontab, macOS launchd)
+- **30턴 시뮬레이션 통합 테스트** — history/log/MEMORY/transcript/FIFO/cron/i18n 7개 E2E 검증
+- **lib.rs** — 통합 테스트용 라이브러리 진입점
+- **DB ActionLog 연동** — handle_message()에서 UserMessage/AgentResponse 자동 DB 기록
+- **텔레그램 응답 전송** — cmd_rx 활성화 + tokio::spawn 응답 전송 태스크 (SendResponse 실제 전송)
+
+### 수정됨 (Fixed)
+- **텔레그램 응답 전송 버그** — `_cmd_rx`가 무시되어 에이전트 응답이 텔레그램에 전송되지 않던 문제 수정
+
+### 변경됨 (Changed)
+- Cargo.toml 버전: 0.7.0 → **0.8.0**
+- spec.md v0.6 → **v0.8** 동기화
 
 ## [0.7.0] - 2026-03-24
 
