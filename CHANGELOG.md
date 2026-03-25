@@ -6,6 +6,17 @@
 
 
 
+## [0.9.0] - 2026-03-25
+
+### 추가됨 (Added)
+- **오프라인 큐 디스크 영속화** — `tests/offline_queueing.rs` 통합 테스트 포함, LLM 실패 시 메시지 유실 방지
+- **실행 감사 (Execution Audit)** — `execution_audit_v09.md` 4단계 검증 및 에지 케이스 리포트 작성
+
+### 변경됨 (Changed)
+- **텔레그램 메시지 분할 전송** — 4096자 제한 초과 시 4000자 단위로 자동 Chunking 전송
+- **DB 커넥션 재사용** — `FemtoDb` 커넥션을 `ChatSession` 내에 캐싱하여 매 메시지마다 열고 닫는 오버헤드 제거
+- Cargo.toml 버전: 0.8.0 → **0.9.0**
+
 ## [0.8.0] - 2026-03-25
 
 ### 추가됨 (Added)
@@ -15,7 +26,6 @@
 - **lib.rs** — 통합 테스트용 라이브러리 진입점
 - **DB ActionLog 연동** — handle_message()에서 UserMessage/AgentResponse 자동 DB 기록
 - **텔레그램 응답 전송** — cmd_rx 활성화 + tokio::spawn 응답 전송 태스크 (SendResponse 실제 전송)
-- **오프라인 큐잉** — LLM API 실패 시 `pending_queue`에 저장, 다음 호출 시 자동 재전송
 - **systemd 서비스** — `docs/femtoclaw.service` 헤드리스 모드 자동 재시작
 - **BUILD_GUIDE.md** — 빌드/크로스컴파일/테스트/실행/systemd 설치 가이드
 - **v0.8 감사** — `audit_roadmap.md` 4단계 감사 (정합성/위험/아키텍처/로드맵)

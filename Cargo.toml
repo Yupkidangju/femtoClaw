@@ -1,6 +1,6 @@
 [package]
 name = "femtoclaw"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 description = "펨토초 수준의 TUI 기반 에이전트 자동화 플랫폼"
 license = "TBD"
@@ -45,4 +45,7 @@ tiktoken-rs = "0.9"                                            # OpenAI 토큰 �
 
 # --- Step 12: CJK Layout (v0.7) ---
 unicode-width = "0.2"                                          # CJK 문자 표시 너비 계산
+
+[dev-dependencies]
+tempfile = "3.27.0"
 

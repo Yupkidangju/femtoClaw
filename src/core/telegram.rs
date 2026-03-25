@@ -306,9 +306,14 @@ async fn run_bot(
                         // 페어링된 chat_id에 응답 전송
                         let chat_id = { response_state.lock().ok().and_then(|s| s.paired_chat_id) };
                         if let Some(cid) = chat_id {
-                            let _ = response_bot
-                                .send_message(teloxide::types::ChatId(cid), &text)
-                                .await;
+                            // [v0.9.0] 텔레그램 메시지 길이 제한(4096자)을 위해 4000자 단위로 분할 전송
+                            let chars: Vec<char> = text.chars().collect();
+                            for chunk in chars.chunks(4000) {
+                                let chunk_str: String = chunk.iter().collect();
+                                let _ = response_bot
+                                    .send_message(teloxide::types::ChatId(cid), &chunk_str)
+                                    .await;
+                            }
                             let _ = response_tx
                                 .send(BotEvent::ResponseSent(text.chars().take(50).collect()));
                         }

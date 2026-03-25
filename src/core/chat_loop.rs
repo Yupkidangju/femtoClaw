@@ -180,8 +180,8 @@ pub struct ChatSession {
     tool_definitions: Vec<super::agent::ToolDefinition>,
     /// [v0.7.0] 세션 트랜스크립트 파일 경로
     session_path: PathBuf,
-    /// [v0.8.0] DB 파일 경로 (ActionLog 기록용, None이면 기록 생략)
-    db_path: Option<PathBuf>,
+    /// [v0.9.0] DB 커넥션 캐싱 (ActionLog 기록용, None이면 기록 생략)
+    db_conn: Option<crate::db::store::FemtoDb>,
     /// [v0.8.0] 오프라인 큐잉 — LLM API 실패 시 대기열
     pending_queue: Vec<String>,
 }
@@ -215,6 +215,17 @@ impl ChatSession {
         );
         let _ = std::fs::write(&session_path, header);
 
+        // [v0.9.0] 오프라인 큐 복원
+        let pending_queue_path = workspace.join("pending_queue.json");
+        let pending_queue = if pending_queue_path.exists() {
+            std::fs::read_to_string(&pending_queue_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
         Self {
             agent_config,
             context,
@@ -223,8 +234,8 @@ impl ChatSession {
             workspace: workspace.to_path_buf(),
             tool_definitions,
             session_path,
-            db_path: None,
-            pending_queue: Vec::new(),
+            db_conn: None,
+            pending_queue,
         }
     }
 
@@ -253,7 +264,8 @@ impl ChatSession {
             Err(e) => {
                 // [v0.8.0] 오프라인 큐잉 — 사용자 메시지를 대기열에 저장
                 self.pending_queue.push(user_message.to_string());
-                // history에서 실패한 user 메시지는 제거 (다음 호출 시 재시도)
+                self.save_pending_queue(); // [v0.9.0] 영속성 저장
+                                           // history에서 실패한 user 메시지는 제거 (다음 호출 시 재시도)
                 self.history.pop();
                 format!("⚠️ {} (큐 {}건 대기 중)", e, self.pending_queue.len())
             }
@@ -277,21 +289,23 @@ impl ChatSession {
         reply_text
     }
 
-    /// [v0.8.0] DB 파일 경로 설정 (ActionLog 기록 활성화)
+    /// [v0.8.0] DB 파일 경로 설정 및 커넥션 캐싱 (v0.9.0)
     pub fn set_db_path(&mut self, path: PathBuf) {
-        self.db_path = Some(path);
+        match crate::db::store::FemtoDb::open(&path) {
+            Ok(db) => {
+                self.db_conn = Some(db);
+            }
+            Err(e) => {
+                eprintln!("[DB Error] Failed to open database: {}", e);
+            }
+        }
     }
 
     /// [v0.8.0] DB에 UserMessage + AgentResponse 기록
     fn record_to_db(&self, user_msg: &str, agent_msg: &str) {
-        let db_path = match &self.db_path {
-            Some(p) => p,
+        let db = match &self.db_conn {
+            Some(db) => db,
             None => return,
-        };
-
-        let db = match crate::db::store::FemtoDb::open(db_path) {
-            Ok(db) => db,
-            Err(_) => return,
         };
 
         // 사용자 메시지 기록
@@ -353,6 +367,9 @@ impl ChatSession {
             // (이미 drain 됐으므로 추가로 남은 것은 없음)
         }
 
+        // [v0.9.0] 큐 상태 변경사항 저장
+        self.save_pending_queue();
+
         if drained {
             eprintln!(
                 "[큐] {} 건 재전송 완료, {} 건 대기 중",
@@ -363,6 +380,16 @@ impl ChatSession {
                 },
                 self.pending_queue.len()
             );
+        }
+    }
+
+    /// [v0.9.0] 오프라인 큐 디스크에 저장
+    fn save_pending_queue(&self) {
+        let path = self.workspace.join("pending_queue.json");
+        if self.pending_queue.is_empty() {
+            let _ = std::fs::remove_file(path);
+        } else if let Ok(json) = serde_json::to_string_pretty(&self.pending_queue) {
+            let _ = std::fs::write(path, json);
         }
     }
 
