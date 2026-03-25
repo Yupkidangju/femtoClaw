@@ -161,7 +161,7 @@ pub struct ChatSession {
     /// 컨텍스트 관리자 (토큰 카운터 + system prompt)
     context: ContextManager,
     /// 대화 기록
-    history: Vec<ChatMessage>,
+    pub history: Vec<ChatMessage>,
     /// 도구 실행기
     executor: ToolExecutor,
     /// workspace 경로
@@ -313,7 +313,7 @@ impl ChatSession {
     }
 
     /// [v0.6.0] 일일 로그에 대화 기록 추가
-    fn append_daily_log(&self, user_msg: &str, assistant_msg: &str) {
+    pub fn append_daily_log(&self, user_msg: &str, assistant_msg: &str) {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let time = chrono::Local::now().format("%H:%M:%S").to_string();
         let log_dir = self.workspace.join("memory");
@@ -343,7 +343,7 @@ impl ChatSession {
     /// [v0.7.0] MEMORY.md 자동 큐레이션
     /// 매 대화 후 메모리 파일에 요약 라인을 추가한다.
     /// 100줄 초과 시 오래된 항목을 자동 제거 (FIFO).
-    fn curate_memory(&self, user_msg: &str) {
+    pub fn curate_memory(&self, user_msg: &str) {
         let memory_path = self.workspace.join("MEMORY.md");
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
         let summary: String = user_msg.chars().take(50).collect();
@@ -380,7 +380,7 @@ impl ChatSession {
     }
 
     /// [v0.7.0] 세션 트랜스크립트에 대화 내용 추가
-    fn append_session_transcript(&self, user_msg: &str, assistant_msg: &str) {
+    pub fn append_session_transcript(&self, user_msg: &str, assistant_msg: &str) {
         let time = chrono::Local::now().format("%H:%M:%S").to_string();
         let entry = format!(
             "---\n\n**[{}] User:**\n{}\n\n**Agent:**\n{}\n\n",
