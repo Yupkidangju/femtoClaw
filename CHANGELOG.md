@@ -6,6 +6,16 @@
 
 
 
+## [1.0.0] - 2026-03-25
+
+### 추가됨 (Added)
+- **Rhai 동적 스킬 엔진 활성화** — `run_skill` 도구를 BUILTIN_TOOLS에 등록 (6번째 도구), LLM이 tool_call로 `.rhai` 스킬을 직접 실행 가능
+- **멀티 에이전트 독립 ChatSession** — TUI에서 `Tab` 키로 에이전트 순환 전환, 전환 시 ChatWorker를 새 에이전트의 workspace/DB로 재생성
+
+### 변경됨 (Changed)
+- Cargo.toml 버전: 0.9.0 → **1.0.0**
+- ToolExecutor에 `dispatch_run_skill()` — 스킬 로더로 이름 검색 → RhaiEngine 실행 → 결과 반환
+
 ## [0.9.0] - 2026-03-25
 
 ### 추가됨 (Added)

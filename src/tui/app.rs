@@ -171,6 +171,8 @@ pub struct App {
     chat_worker: Option<crate::core::chat_loop::ChatWorker>,
     /// [v0.7.0] LLM 응답 대기 중 여부
     chat_waiting: bool,
+    /// [v1.0.0] 멀티 에이전트 경로 관리자
+    agent_manager: Option<crate::core::agent_manager::AgentManager>,
 }
 
 impl App {
@@ -179,6 +181,12 @@ impl App {
         let (tx, rx) = mpsc::channel();
         let is_first = !config::config_exists(&paths.config_enc);
         let preset = &PRESETS[0];
+
+        // [v1.0.0] 멀티 에이전트 경로 관리자 — paths move 전에 먼저 생성
+        let agent_manager = {
+            let ids: Vec<u8> = AppConfig::default().agents.iter().map(|a| a.id).collect();
+            crate::core::agent_manager::AgentManager::new(paths.root.clone(), &ids).ok()
+        };
 
         Self {
             running: true,
@@ -210,6 +218,7 @@ impl App {
             chat_history: Vec::new(),
             chat_worker: None,
             chat_waiting: false,
+            agent_manager,
         }
     }
 
@@ -506,9 +515,10 @@ impl App {
                 // [v0.2.0] 에이전트 상태 표시
                 self.feed_lines
                     .push(format!("[{}] {}", timestamp(), msg!("dash.agent_status")));
+                // [v1.0.0] 활성 에이전트 ID 표시
                 self.feed_lines.push(format!(
-                    "  {}",
-                    msg!("dash.agent_name", self.app_config.agent_name)
+                    "  Agent #{} - {}",
+                    self.app_config.active_agent_id, self.app_config.agent_name
                 ));
                 if let Some(ref llm) = self.app_config.llm_provider {
                     self.feed_lines.push(format!(
@@ -517,6 +527,59 @@ impl App {
                     ));
                 }
                 self.feed_lines.push(format!("  {}", msg!("dash.security")));
+                self.feed_lines.push(format!(
+                    "  [Tab] 에이전트 전환 (1~{})",
+                    self.app_config.agents.len()
+                ));
+            }
+            KeyCode::Tab => {
+                // [v1.0.0] 에이전트 순환 전환
+                let ids: Vec<u8> = self.app_config.agents.iter().map(|a| a.id).collect();
+                if ids.len() > 1 {
+                    let current = self.app_config.active_agent_id;
+                    let idx = ids.iter().position(|&id| id == current).unwrap_or(0);
+                    let next_id = ids[(idx + 1) % ids.len()];
+                    if let Ok(()) = self.app_config.switch_agent(next_id) {
+                        // ChatWorker 재생성
+                        self.chat_worker = None;
+                        self.chat_history.clear();
+
+                        if let (Some(ref llm), Some(ref mgr)) =
+                            (&self.app_config.llm_provider, &self.agent_manager)
+                        {
+                            if let Some(agent_paths) = mgr.get_paths(next_id) {
+                                let persona =
+                                    crate::core::persona::Persona::load(&agent_paths.workspace)
+                                        .unwrap_or_else(|| {
+                                            crate::core::persona::Persona::new_default(
+                                                &self.app_config.agent_name,
+                                            )
+                                        });
+                                self.chat_worker = Some(crate::core::chat_loop::ChatWorker::spawn(
+                                    llm,
+                                    &persona,
+                                    &agent_paths.workspace,
+                                    Some(agent_paths.db_file.clone()),
+                                ));
+                            }
+                        }
+
+                        self.feed_lines.push(format!(
+                            "[{}] 에이전트 #{} ({}) 전환 완료",
+                            timestamp(),
+                            next_id,
+                            self.app_config
+                                .active_agent()
+                                .map(|a| a.name.as_str())
+                                .unwrap_or("?")
+                        ));
+                    }
+                } else {
+                    self.feed_lines.push(format!(
+                        "[{}] 에이전트가 1개만 등록되어 있어 전환할 수 없습니다.",
+                        timestamp()
+                    ));
+                }
             }
             KeyCode::Char('2') => {
                 if let Some(ref llm) = self.app_config.llm_provider {

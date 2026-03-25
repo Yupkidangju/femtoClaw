@@ -322,7 +322,78 @@ impl ToolExecutor {
                 let msg = get_param(params, "msg")?;
                 Ok(msg.to_string())
             }
+            // [v1.0.0] Rhai 동적 스킬 실행
+            "run_skill" => {
+                let skill_name = get_param(params, "skill_name")?;
+                self.dispatch_run_skill(skill_name)
+            }
             _ => Err(ToolError::ToolNotFound(tool_id.to_string())),
+        }
+    }
+
+    /// [v1.0.0] Rhai 동적 스킬 실행 — 이름으로 스킬 파일을 찾고 RhaiEngine에서 실행
+    fn dispatch_run_skill(&self, skill_name: &str) -> Result<String, ToolError> {
+        // 스킬 디렉토리에서 로드 (workspace의 부모가 sandbox_root)
+        let skills_dir = self
+            .workspace
+            .parent()
+            .unwrap_or(&self.workspace)
+            .join("skills");
+
+        // core/ 와 user/ 모두 검색
+        let mut all_skills = Vec::new();
+        for subdir in &["core", "user"] {
+            let dir = skills_dir.join(subdir);
+            if dir.exists() {
+                if let Ok(skills) =
+                    crate::skills::loader::load_skills_from_dir(&dir, *subdir == "core")
+                {
+                    all_skills.extend(skills);
+                }
+            }
+        }
+
+        // 이름으로 Dynamic 스킬 검색
+        let skill = all_skills
+            .iter()
+            .find(|s| {
+                s.name == skill_name && s.skill_type == crate::skills::loader::SkillType::Dynamic
+            })
+            .ok_or_else(|| {
+                let available: Vec<&str> = all_skills
+                    .iter()
+                    .filter(|s| s.skill_type == crate::skills::loader::SkillType::Dynamic)
+                    .map(|s| s.name.as_str())
+                    .collect();
+                ToolError::Other(format!(
+                    "Rhai skill '{}' not found. Available: {}",
+                    skill_name,
+                    if available.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        available.join(", ")
+                    }
+                ))
+            })?;
+
+        // RhaiEngine으로 실행
+        let engine = crate::skills::RhaiEngine::new(self.workspace.clone());
+        let result = engine.run_file(&skill.source_path);
+
+        if result.success {
+            let output = result.output.join("\n");
+            if output.is_empty() {
+                Ok(format!(
+                    "Skill '{}' executed successfully ({}ms)",
+                    skill_name, result.elapsed_ms
+                ))
+            } else {
+                Ok(output)
+            }
+        } else {
+            Err(ToolError::Other(result.error.unwrap_or_else(|| {
+                "Unknown Rhai execution error".to_string()
+            })))
         }
     }
 }

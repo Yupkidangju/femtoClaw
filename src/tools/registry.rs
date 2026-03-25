@@ -163,6 +163,24 @@ pub const BUILTIN_TOOLS: &[ToolDef] = &[
         error_guidance: "This tool never fails.",
         security_level: SecurityLevel::Safe,
     },
+    // [v1.0.0] Rhai 동적 스킬 실행 도구
+    ToolDef {
+        name: "Run Skill",
+        id: "run_skill",
+        description: "Executes a loaded Rhai dynamic skill by name. \
+                      Returns the script output or error message.",
+        params: &[ToolParam {
+            name: "skill_name",
+            param_type: "string",
+            required: true,
+            description: "Name of the Rhai skill to execute",
+            example: "summarize",
+        }],
+        constraints: "Only .rhai skills loaded from skills/ directory are available. \
+                      Scripts are sandboxed with 1M operation limit and 32-level call depth.",
+        error_guidance: "If skill is not found, check available skills with the TUI [3] menu.",
+        security_level: SecurityLevel::JailRequired,
+    },
 ];
 
 /// [v0.4.0] ID로 도구 정의를 찾는다
@@ -176,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_builtin_tools_count() {
-        assert_eq!(BUILTIN_TOOLS.len(), 5);
+        assert_eq!(BUILTIN_TOOLS.len(), 6);
     }
 
     #[test]

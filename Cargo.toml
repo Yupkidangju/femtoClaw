@@ -1,6 +1,6 @@
 [package]
 name = "femtoclaw"
-version = "0.9.0"
+version = "1.0.0"
 edition = "2021"
 description = "펨토초 수준의 TUI 기반 에이전트 자동화 플랫폼"
 license = "TBD"

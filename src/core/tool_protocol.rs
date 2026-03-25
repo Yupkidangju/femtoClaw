@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn test_build_tool_definitions() {
         let defs = build_tool_definitions();
-        assert_eq!(defs.len(), 5); // file_read, file_write, file_list, sleep, print
+        assert_eq!(defs.len(), 6); // file_read, file_write, file_list, sleep, print, run_skill
 
         // file_read 확인
         let file_read = defs
