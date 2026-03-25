@@ -1,0 +1,27 @@
+[Unit]
+Description=femtoClaw Agent - Headless Telegram Bot Mode
+Documentation=https://github.com/Yupkidangju/femtoClaw
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 실행 파일 경로 (실제 설치 경로로 변경)
+ExecStart=/usr/local/bin/femtoclaw --headless
+# 작업 디렉토리 (로그/DB 접근용)
+WorkingDirectory=/home/%u
+# 재시작 정책: 비정상 종료 시 10초 후 재시작
+Restart=on-failure
+RestartSec=10
+# 최대 재시작 횟수 (5분 내 5회)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+# 환경 변수 (필요 시)
+Environment=HOME=/home/%u
+# 표준 출력/에러를 syslog로
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=femtoclaw
+
+[Install]
+WantedBy=multi-user.target

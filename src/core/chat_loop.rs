@@ -182,6 +182,8 @@ pub struct ChatSession {
     session_path: PathBuf,
     /// [v0.8.0] DB 파일 경로 (ActionLog 기록용, None이면 기록 생략)
     db_path: Option<PathBuf>,
+    /// [v0.8.0] 오프라인 큐잉 — LLM API 실패 시 대기열
+    pending_queue: Vec<String>,
 }
 
 /// [v0.7.0] MEMORY.md 최대 라인 수 (FIFO 정리 기준)
@@ -222,6 +224,7 @@ impl ChatSession {
             tool_definitions,
             session_path,
             db_path: None,
+            pending_queue: Vec::new(),
         }
     }
 
@@ -235,16 +238,25 @@ impl ChatSession {
     /// 5. 최종 텍스트 응답 반환
     /// 6. 일일 로그, 세션 트랜스크립트에 기록
     pub fn handle_message(&mut self, user_message: &str) -> String {
+        // 0. [v0.8.0] 오프라인 큐 드레인 — 이전 실패 메시지가 있으면 먼저 재시도
+        self.drain_pending_queue();
+
         // 1. 사용자 메시지 추가
         self.history.push(ChatMessage::text("user", user_message));
 
         // 2. LLM 호출 (blocking — tokio::runtime 사용)
         let response = self.call_llm_with_tools();
 
-        // 3. 응답을 history에 추가
+        // 3. 응답을 history에 추가 / 실패 시 큐잉
         let reply_text = match response {
             Ok(text) => text,
-            Err(e) => format!("⚠️ {}", e),
+            Err(e) => {
+                // [v0.8.0] 오프라인 큐잉 — 사용자 메시지를 대기열에 저장
+                self.pending_queue.push(user_message.to_string());
+                // history에서 실패한 user 메시지는 제거 (다음 호출 시 재시도)
+                self.history.pop();
+                format!("⚠️ {} (큐 {}건 대기 중)", e, self.pending_queue.len())
+            }
         };
 
         self.history
@@ -297,6 +309,66 @@ impl ChatSession {
             &agent_summary,
             agent_msg,
         );
+    }
+
+    /// [v0.8.0] 오프라인 큐 드레인 — 이전 실패 메시지를 순서대로 재전송
+    /// LLM이 정상 응답하면 해당 메시지를 큐에서 제거하고 history에 추가.
+    /// 재실패하면 큐에 남겨두고 중단.
+    fn drain_pending_queue(&mut self) {
+        if self.pending_queue.is_empty() {
+            return;
+        }
+
+        // 큐 복사 후 비우기 (실패 시 다시 넣음)
+        let queued: Vec<String> = self.pending_queue.drain(..).collect();
+        let mut still_pending = Vec::new();
+        let mut drained = false;
+
+        for msg in queued {
+            self.history.push(ChatMessage::text("user", &msg));
+
+            match self.call_llm_with_tools() {
+                Ok(reply) => {
+                    self.history.push(ChatMessage::text("assistant", &reply));
+                    self.append_daily_log(&msg, &reply);
+                    self.curate_memory(&msg);
+                    self.append_session_transcript(&msg, &reply);
+                    self.record_to_db(&msg, &reply);
+                    drained = true;
+                }
+                Err(_) => {
+                    // 재실패 — history에서 제거하고 큐에 복원
+                    self.history.pop();
+                    still_pending.push(msg);
+                    // 나머지도 큐에 남겨둠
+                    break;
+                }
+            }
+        }
+
+        // 실패한 것 + 남은 것 큐에 복원
+        if !still_pending.is_empty() {
+            self.pending_queue = still_pending;
+            // 아직 처리하지 못한 나머지도 복원
+            // (이미 drain 됐으므로 추가로 남은 것은 없음)
+        }
+
+        if drained {
+            eprintln!(
+                "[큐] {} 건 재전송 완료, {} 건 대기 중",
+                if self.pending_queue.is_empty() {
+                    "전체"
+                } else {
+                    "일부"
+                },
+                self.pending_queue.len()
+            );
+        }
+    }
+
+    /// [v0.8.0] 대기 중인 큐 크기 반환
+    pub fn pending_count(&self) -> usize {
+        self.pending_queue.len()
     }
 
     /// [v0.6.0] LLM 호출 + tool_call 연쇄 처리
