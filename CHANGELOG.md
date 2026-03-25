@@ -15,6 +15,10 @@
 - **lib.rs** — 통합 테스트용 라이브러리 진입점
 - **DB ActionLog 연동** — handle_message()에서 UserMessage/AgentResponse 자동 DB 기록
 - **텔레그램 응답 전송** — cmd_rx 활성화 + tokio::spawn 응답 전송 태스크 (SendResponse 실제 전송)
+- **오프라인 큐잉** — LLM API 실패 시 `pending_queue`에 저장, 다음 호출 시 자동 재전송
+- **systemd 서비스** — `docs/femtoclaw.service` 헤드리스 모드 자동 재시작
+- **BUILD_GUIDE.md** — 빌드/크로스컴파일/테스트/실행/systemd 설치 가이드
+- **v0.8 감사** — `audit_roadmap.md` 4단계 감사 (정합성/위험/아키텍처/로드맵)
 
 ### 수정됨 (Fixed)
 - **텔레그램 응답 전송 버그** — `_cmd_rx`가 무시되어 에이전트 응답이 텔레그램에 전송되지 않던 문제 수정
