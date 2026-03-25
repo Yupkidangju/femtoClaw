@@ -18,6 +18,8 @@
 - **세션 트랜스크립트** — `sessions/YYYYMMDD_HHMMSS.md` 형식으로 전체 대화 자동 기록
 - **CJK 레이아웃 보정** — unicode-width 크레이트 적용, truncate_for_display() 표시 너비 기준으로 변경
 - **텔레그램 다국어** — 봇 메시지 4건(pair_success/fail/prompt, help) msg!() 전환
+- **내장 스케줄러** — `schedule.toml` 기반 크론 타이머 + 3종 액션(memory_cleanup, db_backup, daily_summary)
+- **OS 네이티브 예약** — `--install-schedule` / `--uninstall-schedule` CLI (Windows schtasks, Linux crontab, macOS launchd)
 
 ### 변경됨 (Changed)
 - Cargo.toml 버전: 0.6.0 → **0.7.0**

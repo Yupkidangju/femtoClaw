@@ -29,11 +29,17 @@ use error::FemtoResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// [v0.1.0] 앱 실행 모드
+/// [v0.8.0] 앱 실행 모드
 #[derive(Debug, Clone, PartialEq)]
 enum RunMode {
     Tui,
     Headless,
+    /// [v0.8.0] 내장 스케줄러 실행 (OS 예약에서 호출)
+    Schedule,
+    /// [v0.8.0] OS 네이티브 예약 등록
+    InstallSchedule,
+    /// [v0.8.0] OS 네이티브 예약 해제
+    UninstallSchedule,
 }
 
 /// [v0.5.0] CLI 인자 파싱 (--headless, --lang)
@@ -51,7 +57,13 @@ fn parse_args() -> RunMode {
         }
     }
 
-    if args.iter().any(|a| a == "--headless") {
+    if args.iter().any(|a| a == "--run-schedule") {
+        RunMode::Schedule
+    } else if args.iter().any(|a| a == "--install-schedule") {
+        RunMode::InstallSchedule
+    } else if args.iter().any(|a| a == "--uninstall-schedule") {
+        RunMode::UninstallSchedule
+    } else if args.iter().any(|a| a == "--headless") {
         RunMode::Headless
     } else {
         RunMode::Tui
@@ -120,6 +132,27 @@ fn run() -> FemtoResult<()> {
         }
         RunMode::Headless => {
             run_headless(&paths, _shutdown_flag)?;
+        }
+        RunMode::Schedule => {
+            // [v0.8.0] 내장 스케줄러 실행
+            core::schedule::run_scheduler_loop(&paths.workspace, &paths.db_file, _shutdown_flag);
+        }
+        RunMode::InstallSchedule => {
+            // [v0.8.0] OS 네이티브 예약 등록
+            match std::env::current_exe() {
+                Ok(exe) => match core::install::install_schedule(&exe) {
+                    Ok(msg) => eprintln!("{}", msg),
+                    Err(e) => eprintln!("❌ {}", e),
+                },
+                Err(e) => eprintln!("❌ exe 경로 탐색 실패: {}", e),
+            }
+        }
+        RunMode::UninstallSchedule => {
+            // [v0.8.0] OS 네이티브 예약 해제
+            match core::install::uninstall_schedule() {
+                Ok(msg) => eprintln!("{}", msg),
+                Err(e) => eprintln!("❌ {}", e),
+            }
         }
     }
 
