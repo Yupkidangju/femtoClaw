@@ -6,6 +6,23 @@
 
 
 
+## [1.1.0] - 2026-03-26
+
+### 추가됨 (Added)
+- **Onboard 메뉴 `[O]`** — 대시보드에서 언제든 4단계 가이드(Provider→API Key→Model→Telegram) 재접근 가능
+- **Settings 메뉴 `[S]`** — 기존 설정(Provider/API Key/Model/Telegram) 개별 수정
+- **EditAgent 메뉴 `[E]`** — 에이전트별 LLM 변경/삭제, 기본 에이전트 #1 보호
+- **Add Agent `[+]`** — 에이전트 추가 + 현재 활성 LLM 설정 자동 복제
+- `AppConfig::remove_agent()` — 에이전트 삭제 (기본 #1 보호, 활성 삭제 시 #1 전환)
+
+### 삭제됨 (Removed)
+- **비밀번호 화면 완전 제거** — `Screen::Password`, `handle_password_key()`, `render_password()`, `submit_password()` 삭제
+- Boot 시 비밀번호 없이 바로 Dashboard(또는 Onboard) 직행
+
+### 변경됨 (Changed)
+- Onboard에서 `Esc` → 앱 종료 대신 Dashboard 복귀로 변경
+- Cargo.toml 버전: 1.0.0 → **1.1.0**
+
 ## [1.0.0] - 2026-03-25
 
 ### 추가됨 (Added)

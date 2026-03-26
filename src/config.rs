@@ -151,6 +151,23 @@ impl AppConfig {
             Err(format!("Agent #{} not found or inactive", id))
         }
     }
+
+    /// [v1.1.0] 에이전트 삭제 (기본 #1은 삭제 불가)
+    pub fn remove_agent(&mut self, id: u8) -> Result<(), String> {
+        if id == 1 {
+            return Err("기본 에이전트 #1은 삭제할 수 없습니다.".to_string());
+        }
+        let original_len = self.agents.len();
+        self.agents.retain(|a| a.id != id);
+        if self.agents.len() == original_len {
+            return Err(format!("Agent #{} not found", id));
+        }
+        // 삭제된 에이전트가 활성이면 #1로 전환
+        if self.active_agent_id == id {
+            self.active_agent_id = 1;
+        }
+        Ok(())
+    }
 }
 
 /// [v0.1.0] AppConfig를 암호화하여 config.enc 파일로 저장한다.

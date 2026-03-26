@@ -4,7 +4,7 @@
 // [v0.6.0] Dashboard 채팅 패널 추가 — handle_message() 연동
 //
 // 화면 전환 흐름 (designs.md 3절):
-// Boot → Password → (최초실행 ? Onboard : Dashboard) → Dashboard
+// Boot → Dashboard (온보딩 미완료 시 Onboard)
 
 use std::sync::mpsc;
 
@@ -85,9 +85,12 @@ const MAX_TOKEN_LEN: usize = 128;
 #[derive(Debug, Clone, PartialEq)]
 enum Screen {
     Boot,
-    Password,
     Onboard,
     Dashboard,
+    /// [v1.1.0] 설정 수정 화면
+    Settings,
+    /// [v1.1.0] 에이전트 편집 화면
+    EditAgent,
 }
 
 /// 온보딩 화면에서 현재 포커스된 입력 필드
@@ -128,13 +131,12 @@ pub struct App {
     screen: Screen,
     boot_timer: u8,
 
-    // 비밀번호 화면 상태
-    password: String,
-    password_confirm: String,
-    pw_field_confirm: bool,
-    pw_error: Option<String>,
-    pw_attempts: u8,
+    /// [v1.1.0] 초기 온보딩 완료 여부
     is_first_run: bool,
+    /// [v1.1.0] Settings 화면에서 선택된 항목 인덱스
+    settings_index: usize,
+    /// [v1.1.0] EditAgent 화면에서 선택된 에이전트 인덱스
+    edit_agent_index: usize,
 
     // 온보딩 화면 상태
     preset_index: usize,
@@ -193,12 +195,9 @@ impl App {
             paths,
             screen: Screen::Boot,
             boot_timer: 0,
-            password: String::new(),
-            password_confirm: String::new(),
-            pw_field_confirm: false,
-            pw_error: None,
-            pw_attempts: 0,
             is_first_run: is_first,
+            settings_index: 0,
+            edit_agent_index: 0,
             preset_index: 0,
             endpoint: preset.endpoint.to_string(),
             api_key: String::new(),
@@ -234,7 +233,8 @@ impl App {
 
         match self.screen {
             Screen::Boot => self.handle_boot_key(key),
-            Screen::Password => self.handle_password_key(key),
+            Screen::Settings => self.handle_settings_key(key),
+            Screen::EditAgent => self.handle_edit_agent_key(key),
             Screen::Onboard => self.handle_onboard_key(key),
             Screen::Dashboard => self.handle_dashboard_key(key),
         }
@@ -246,7 +246,12 @@ impl App {
         if self.screen == Screen::Boot {
             self.boot_timer += 1;
             if self.boot_timer >= 5 {
-                self.screen = Screen::Password;
+                // [v1.1.0] 비밀번호 없이 직행 — 온보딩 미완료 시 Onboard
+                if self.app_config.llm_provider.is_none() {
+                    self.screen = Screen::Onboard;
+                } else {
+                    self.screen = Screen::Dashboard;
+                }
             }
         }
 
@@ -350,36 +355,87 @@ impl App {
     fn handle_boot_key(&mut self, key: KeyEvent) {
         // ESC로 부트 시퀀스 스킵
         if key.code == KeyCode::Esc {
-            self.screen = Screen::Password;
+            if self.app_config.llm_provider.is_none() {
+                self.screen = Screen::Onboard;
+            } else {
+                self.screen = Screen::Dashboard;
+            }
         }
     }
 
-    fn handle_password_key(&mut self, key: KeyEvent) {
+    /// [v1.1.0] Settings 화면 키 처리
+    fn handle_settings_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Esc => self.running = false,
-            KeyCode::Tab => {
-                if self.is_first_run {
-                    self.pw_field_confirm = !self.pw_field_confirm;
+            KeyCode::Esc => self.screen = Screen::Dashboard,
+            KeyCode::Up => {
+                if self.settings_index > 0 {
+                    self.settings_index -= 1;
                 }
             }
-            KeyCode::Enter => self.submit_password(),
-            KeyCode::Backspace => {
-                if self.pw_field_confirm {
-                    self.password_confirm.pop();
-                } else {
-                    self.password.pop();
+            KeyCode::Down => {
+                if self.settings_index < 3 {
+                    self.settings_index += 1;
                 }
             }
-            KeyCode::Char(c) => {
-                // 글자 수 상한 초과 시 무시 (붙여넣기 방어)
-                if self.pw_field_confirm {
-                    if self.password_confirm.len() < MAX_PASSWORD_LEN {
-                        self.password_confirm.push(c);
+            KeyCode::Enter => {
+                // 선택된 항목 편집 → 온보딩 화면으로 전환하고 해당 필드에 포커스
+                match self.settings_index {
+                    0 => { /* Provider — 온보딩에서 프리셋 변경 */ }
+                    1 => self.onboard_field = OnboardField::ApiKey,
+                    2 => self.onboard_field = OnboardField::Model,
+                    3 => self.onboard_field = OnboardField::TelegramToken,
+                    _ => {}
+                }
+                self.screen = Screen::Onboard;
+            }
+            _ => {}
+        }
+    }
+
+    /// [v1.1.0] EditAgent 화면 키 처리
+    fn handle_edit_agent_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => self.screen = Screen::Dashboard,
+            KeyCode::Up => {
+                if self.edit_agent_index > 0 {
+                    self.edit_agent_index -= 1;
+                }
+            }
+            KeyCode::Down => {
+                let max = self.app_config.agents.len().saturating_sub(1);
+                if self.edit_agent_index < max {
+                    self.edit_agent_index += 1;
+                }
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                // 에이전트 삭제 (기본 #1은 불가)
+                let agents = &self.app_config.agents;
+                if self.edit_agent_index < agents.len() {
+                    let target_id = agents[self.edit_agent_index].id;
+                    if target_id == 1 {
+                        self.feed_lines.push(format!(
+                            "[{}] 기본 에이전트 #1은 삭제할 수 없습니다.",
+                            timestamp()
+                        ));
+                    } else if let Ok(()) = self.app_config.remove_agent(target_id) {
+                        self.feed_lines.push(format!(
+                            "[{}] 에이전트 #{} 삭제 완료",
+                            timestamp(),
+                            target_id
+                        ));
+                        if self.edit_agent_index > 0 {
+                            self.edit_agent_index -= 1;
+                        }
                     }
-                } else if self.password.len() < MAX_PASSWORD_LEN {
-                    self.password.push(c);
                 }
-                self.pw_error = None;
+            }
+            KeyCode::Enter => {
+                // 선택된 에이전트의 LLM 설정 변경 → 온보딩 화면으로
+                if self.edit_agent_index < self.app_config.agents.len() {
+                    let target_id = self.app_config.agents[self.edit_agent_index].id;
+                    let _ = self.app_config.switch_agent(target_id);
+                    self.screen = Screen::Onboard;
+                }
             }
             _ => {}
         }
@@ -387,7 +443,8 @@ impl App {
 
     fn handle_onboard_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Esc => self.running = false,
+            // [v1.1.0] Esc — 대시보드로 복귀 (온보딩 중단)
+            KeyCode::Esc => self.screen = Screen::Dashboard,
             KeyCode::Tab => {
                 // 필드 순환: ApiKey → Model → TelegramToken → ApiKey
                 self.onboard_field = match self.onboard_field {
@@ -579,6 +636,45 @@ impl App {
                         "[{}] 에이전트가 1개만 등록되어 있어 전환할 수 없습니다.",
                         timestamp()
                     ));
+                }
+            }
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                // [v1.1.0] 온보딩 화면으로 전환
+                self.screen = Screen::Onboard;
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                // [v1.1.0] Settings 화면으로 전환
+                self.settings_index = 0;
+                self.screen = Screen::Settings;
+            }
+            KeyCode::Char('e') | KeyCode::Char('E') => {
+                // [v1.1.0] EditAgent 화면으로 전환
+                self.edit_agent_index = 0;
+                self.screen = Screen::EditAgent;
+            }
+            KeyCode::Char('+') => {
+                // [v1.1.0] 에이전트 추가 + 현재 LLM 복제
+                let agent_name = format!("agent-{}", self.app_config.agents.len() + 1);
+                match self.app_config.add_agent(&agent_name) {
+                    Ok(new_id) => {
+                        // 현재 LLM 설정 복제
+                        if let Some(ref llm) = self.app_config.llm_provider {
+                            if let Some(agent) =
+                                self.app_config.agents.iter_mut().find(|a| a.id == new_id)
+                            {
+                                agent.llm_provider = Some(llm.clone());
+                            }
+                        }
+                        self.feed_lines.push(format!(
+                            "[{}] 에이전트 #{} '{}' 추가 완료 (LLM 복제됨)",
+                            timestamp(),
+                            new_id,
+                            agent_name
+                        ));
+                    }
+                    Err(e) => {
+                        self.feed_lines.push(format!("[{}] {}", timestamp(), e));
+                    }
                 }
             }
             KeyCode::Char('2') => {
@@ -782,59 +878,7 @@ impl App {
         }
     }
 
-    // === 비밀번호 로직 ===
-
-    fn submit_password(&mut self) {
-        if self.is_first_run {
-            // 최초 실행: 두 필드 일치 검증
-            if self.password.is_empty() {
-                self.pw_error = Some(msg!("pw.empty").to_string());
-                return;
-            }
-            if self.password.len() < 4 {
-                self.pw_error = Some(msg!("pw.too_short").to_string());
-                return;
-            }
-            if self.password != self.password_confirm {
-                self.pw_error = Some(msg!("pw.mismatch").to_string());
-                return;
-            }
-            // 기본 설정으로 config.enc 생성
-            match config::save_config(
-                &self.app_config,
-                self.password.as_bytes(),
-                &self.paths.config_enc,
-            ) {
-                Ok(_) => {
-                    self.feed_lines
-                        .push(format!("[{}] {}", timestamp(), msg!("pw.key_generated")));
-                    self.screen = Screen::Onboard;
-                }
-                Err(e) => {
-                    self.pw_error = Some(msg!("pw.save_fail", e));
-                }
-            }
-        } else {
-            // 재실행: 기존 config.enc 복호화 시도
-            match config::load_config(self.password.as_bytes(), &self.paths.config_enc) {
-                Ok(cfg) => {
-                    self.app_config = cfg;
-                    self.feed_lines
-                        .push(format!("[{}] {}", timestamp(), msg!("pw.decrypt_ok")));
-                    self.screen = Screen::Dashboard;
-                }
-                Err(_) => {
-                    self.pw_attempts += 1;
-                    if self.pw_attempts >= 3 {
-                        self.pw_error = Some(msg!("pw.3fail_reset").to_string());
-                    } else {
-                        self.pw_error = Some(msg!("pw.wrong_pw", self.pw_attempts));
-                    }
-                    self.password.clear();
-                }
-            }
-        }
-    }
+    // [v1.1.0] 비밀번호 로직 삭제됨 — boot 시 직행
 
     // === 온보딩 로직 ===
 
@@ -935,10 +979,10 @@ impl App {
             });
         }
 
-        // config.enc 저장
+        // [v1.1.0] 비밀번호 제거 — 고정 키로 설정 저장
         match config::save_config(
             &self.app_config,
-            self.password.as_bytes(),
+            b"femtoclaw-default-key",
             &self.paths.config_enc,
         ) {
             Ok(_) => {
@@ -966,9 +1010,10 @@ impl App {
 
         match self.screen {
             Screen::Boot => self.render_boot(frame),
-            Screen::Password => self.render_password(frame),
             Screen::Onboard => self.render_onboard(frame),
             Screen::Dashboard => self.render_dashboard(frame),
+            Screen::Settings => self.render_settings(frame),
+            Screen::EditAgent => self.render_edit_agent(frame),
         }
     }
 
@@ -1007,82 +1052,154 @@ impl App {
         frame.render_widget(hint, hint_area);
     }
 
-    // --- 비밀번호 화면 ---
-    fn render_password(&self, frame: &mut Frame) {
+    // --- [v1.1.0] Settings 화면 ---
+    fn render_settings(&self, frame: &mut Frame) {
         let area = frame.area();
         let chunks = Layout::vertical([
-            Constraint::Length(3), // 타이틀 바
-            Constraint::Min(0),    // 컨텐츠
-            Constraint::Length(1), // 푸터
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(1),
         ])
         .split(area);
 
-        // 타이틀 바
-        let title_text = if self.is_first_run {
-            "femtoClaw v0.1 BETA — Master Password Setup"
-        } else {
-            "femtoClaw v0.1 BETA — Enter Master Password"
-        };
-        let title = Paragraph::new(title_text)
+        let title = Paragraph::new("femtoClaw — Settings")
             .style(theme::title())
             .block(Block::bordered().border_style(theme::border()));
         frame.render_widget(title, chunks[0]);
 
-        // 컨텐츠 영역
-        let content = chunks[1];
-        let inner = center_rect(content, 60, if self.is_first_run { 14 } else { 10 });
+        let provider_name = self
+            .app_config
+            .llm_provider
+            .as_ref()
+            .map(|l| format!("{:?}", l.preset))
+            .unwrap_or_else(|| "(미설정)".to_string());
+        let api_key_display = self
+            .app_config
+            .llm_provider
+            .as_ref()
+            .map(|l| {
+                if l.api_key.len() > 8 {
+                    format!("{}...***", &l.api_key[..8])
+                } else {
+                    "***".to_string()
+                }
+            })
+            .unwrap_or_else(|| "(미설정)".to_string());
+        let model_name = self
+            .app_config
+            .llm_provider
+            .as_ref()
+            .map(|l| l.model.clone())
+            .unwrap_or_else(|| "(미설정)".to_string());
+        let tg_status = self
+            .app_config
+            .telegram
+            .as_ref()
+            .map(|t| {
+                if t.verified {
+                    "✅ Paired".to_string()
+                } else {
+                    "⚠️ Not verified".to_string()
+                }
+            })
+            .unwrap_or_else(|| "(미설정)".to_string());
 
-        let mut lines: Vec<Line> = vec![
-            Line::from(""),
-            Line::from(Span::styled("  [!] Welcome to femtoClaw.", theme::title())),
-            Line::from(Span::styled(
-                "      Workspace jailed at: ~/.femtoclaw/workspace/",
-                theme::text(),
-            )),
-            Line::from(""),
+        let items = [
+            format!("Provider : {}", provider_name),
+            format!("API Key  : {}", api_key_display),
+            format!("Model    : {}", model_name),
+            format!("Telegram : {}", tg_status),
         ];
 
-        // 비밀번호 필드 (박스 폭 40글자 제한)
-        let pw_display = truncate_for_display(&"*".repeat(self.password.len()), 40);
-        let pw_indicator = if !self.pw_field_confirm { "▶ " } else { "  " };
-        lines.push(Line::from(vec![
-            Span::styled(format!("  {}Password : [", pw_indicator), theme::text()),
-            Span::styled(pw_display, theme::input()),
-            Span::styled("]", theme::text()),
-        ]));
-
-        if self.is_first_run {
-            let cf_display = truncate_for_display(&"*".repeat(self.password_confirm.len()), 40);
-            let cf_indicator = if self.pw_field_confirm { "▶ " } else { "  " };
-            lines.push(Line::from(vec![
-                Span::styled(format!("  {}Confirm  : [", cf_indicator), theme::text()),
-                Span::styled(cf_display, theme::input()),
-                Span::styled("]", theme::text()),
-            ]));
-        }
-
-        // 에러 메시지
-        if let Some(ref err) = self.pw_error {
-            lines.push(Line::from(""));
+        let mut lines = vec![Line::from("")];
+        for (i, item) in items.iter().enumerate() {
+            let marker = if i == self.settings_index {
+                "▶ "
+            } else {
+                "  "
+            };
+            let style = if i == self.settings_index {
+                theme::active_border()
+            } else {
+                theme::text()
+            };
             lines.push(Line::from(Span::styled(
-                format!("  ✗ {}", err),
-                theme::error(),
+                format!("{}{}", marker, item),
+                style,
             )));
         }
 
-        let pw_block = Block::bordered()
+        let inner = center_rect(chunks[1], 50, 8);
+        let block = Block::bordered()
             .border_type(BorderType::Rounded)
             .border_style(theme::active_border());
-        let pw_widget = Paragraph::new(lines).block(pw_block).style(theme::text());
-        frame.render_widget(pw_widget, inner);
+        frame.render_widget(
+            Paragraph::new(lines).block(block).style(theme::text()),
+            inner,
+        );
 
-        // 푸터
-        let footer_text = if self.is_first_run {
-            "[Enter] Confirm & Generate Key    [Tab] Switch Field    [Esc] Quit"
-        } else {
-            "[Enter] Unlock    [Esc] Quit"
-        };
-        let footer = Paragraph::new(footer_text).style(theme::muted());
+        let footer = Paragraph::new("[↑↓] Select  [Enter] Edit  [Esc] Back").style(theme::muted());
+        frame.render_widget(footer, chunks[2]);
+    }
+
+    // --- [v1.1.0] EditAgent 화면 ---
+    fn render_edit_agent(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let chunks = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(area);
+
+        let title = Paragraph::new("femtoClaw — Edit Agent")
+            .style(theme::title())
+            .block(Block::bordered().border_style(theme::border()));
+        frame.render_widget(title, chunks[0]);
+
+        let mut lines = vec![Line::from("")];
+        for (i, agent) in self.app_config.agents.iter().enumerate() {
+            let marker = if i == self.edit_agent_index {
+                "▶ "
+            } else {
+                "  "
+            };
+            let active_tag = if agent.id == self.app_config.active_agent_id {
+                " (Active)"
+            } else {
+                ""
+            };
+            let llm_info = agent
+                .llm_provider
+                .as_ref()
+                .map(|l| format!("{:?}/{}", l.preset, l.model))
+                .unwrap_or_else(|| "No LLM".to_string());
+            let style = if i == self.edit_agent_index {
+                theme::active_border()
+            } else {
+                theme::text()
+            };
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{}Agent #{}: {}{} — {}",
+                    marker, agent.id, agent.name, active_tag, llm_info
+                ),
+                style,
+            )));
+        }
+
+        let height = (self.app_config.agents.len() + 3).min(12) as u16;
+        let inner = center_rect(chunks[1], 60, height);
+        let block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(theme::active_border());
+        frame.render_widget(
+            Paragraph::new(lines).block(block).style(theme::text()),
+            inner,
+        );
+
+        let footer = Paragraph::new("[↑↓] Select  [Enter] Edit LLM  [D] Delete  [Esc] Back")
+            .style(theme::muted());
         frame.render_widget(footer, chunks[2]);
     }
 
