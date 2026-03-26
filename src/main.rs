@@ -162,9 +162,9 @@ fn run() -> FemtoResult<()> {
 /// [v0.1.0] 헤드리스 모드: TUI 없이 텔레그램 봇만 실행.
 /// config.enc에서 설정 로드 → 텔레그램 봇 시작 → 종료 신호까지 대기.
 fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -> FemtoResult<()> {
-    eprintln!("┌──────────────────────────────────────────┐");
-    eprintln!("│  femtoClaw v0.6.0 — Headless Mode          │");
-    eprintln!("└──────────────────────────────────────────┘");
+    eprintln!("+------------------------------------------+");
+    eprintln!("|  femtoClaw v1.1.0 -- Headless Mode        |");
+    eprintln!("+------------------------------------------+");
 
     // config.enc 존재 여부 확인
     if !config::config_exists(&paths.config_enc) {
@@ -173,19 +173,8 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
         return Ok(());
     }
 
-    // 비밀번호 입력 (터미널에서)
-    eprint!("[*] {}", msg!("cli.enter_pw"));
-    let mut password = String::new();
-    std::io::stdin().read_line(&mut password).map_err(|e| {
-        crate::error::FemtoError::ConfigIo(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("stdin: {}", e),
-        ))
-    })?;
-    let password = password.trim();
-
-    // config.enc 로드
-    let mut app_config = config::load_config(password.as_bytes(), &paths.config_enc)?;
+    // [v1.1.0] 비밀번호 제거 — 고정 키로 config.enc 로드
+    let mut app_config = config::load_config(b"femtoclaw-default-key", &paths.config_enc)?;
 
     // 텔레그램 토큰 확인
     let tg_token = match &app_config.telegram {
@@ -236,7 +225,7 @@ fn run_headless(paths: &sandbox::SandboxPaths, shutdown_flag: Arc<AtomicBool>) -
                     tg.chat_id = Some(chat_id);
                 }
                 if let Err(e) =
-                    config::save_config(&app_config, password.as_bytes(), &paths.config_enc)
+                    config::save_config(&app_config, b"femtoclaw-default-key", &paths.config_enc)
                 {
                     eprintln!("[!] {}", msg!("cli.chat_save_fail", e));
                 } else {

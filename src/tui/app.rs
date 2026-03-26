@@ -74,7 +74,7 @@ const PRESETS: &[Preset] = &[
 
 // === 입력 필드 글자 수 상한 ===
 // [v0.1.0] 붙여넣기 등으로 대량 입력 시 UI 범위 초과 방지
-const MAX_PASSWORD_LEN: usize = 128;
+// [v1.1.0] MAX_PASSWORD_LEN 삭제됨 — 비밀번호 기능 제거
 const MAX_API_KEY_LEN: usize = 256;
 const MAX_MODEL_LEN: usize = 64;
 const MAX_TOKEN_LEN: usize = 128;
@@ -184,9 +184,17 @@ impl App {
         let is_first = !config::config_exists(&paths.config_enc);
         let preset = &PRESETS[0];
 
+        // [v1.1.0] 기존 config.enc가 있으면 고정 키로 로드 (설정 영속화)
+        let app_config = if !is_first {
+            config::load_config(b"femtoclaw-default-key", &paths.config_enc)
+                .unwrap_or_else(|_| AppConfig::default())
+        } else {
+            AppConfig::default()
+        };
+
         // [v1.0.0] 멀티 에이전트 경로 관리자 — paths move 전에 먼저 생성
         let agent_manager = {
-            let ids: Vec<u8> = AppConfig::default().agents.iter().map(|a| a.id).collect();
+            let ids: Vec<u8> = app_config.agents.iter().map(|a| a.id).collect();
             crate::core::agent_manager::AgentManager::new(paths.root.clone(), &ids).ok()
         };
 
@@ -210,7 +218,7 @@ impl App {
             model_index: 0,
             async_tx: tx,
             async_rx: rx,
-            app_config: AppConfig::default(),
+            app_config,
             feed_lines: vec![format!("[{}] {}", timestamp(), msg!("boot.init_msg"))],
             chat_mode: false,
             chat_input: String::new(),
@@ -380,7 +388,7 @@ impl App {
             KeyCode::Enter => {
                 // 선택된 항목 편집 → 온보딩 화면으로 전환하고 해당 필드에 포커스
                 match self.settings_index {
-                    0 => { /* Provider — 온보딩에서 프리셋 변경 */ }
+                    0 => { /* Provider — 온보딩에서 ←→ 키로 프리셋 변경 */ }
                     1 => self.onboard_field = OnboardField::ApiKey,
                     2 => self.onboard_field = OnboardField::Model,
                     3 => self.onboard_field = OnboardField::TelegramToken,
